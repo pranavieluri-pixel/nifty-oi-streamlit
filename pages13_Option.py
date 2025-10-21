@@ -74,114 +74,213 @@ if not filtered_rows:
 
 spot_price = float(underlying_value) if underlying_value else 0.0
 
-# ----------------- Build full DataFrame -----------------
+
+spot_price = float(underlying_value) if underlying_value is not None else 0.0
+
+# ----------------- Build DataFrame -----------------
 rows = []
 for r in filtered_rows:
     strike = safe_int(r.get("strikePrice", 0))
     ce = r.get("CE") or {}
     pe = r.get("PE") or {}
 
-    ce_ltp = safe_int(ce.get("lastPrice", 0))
-    ce_oi = safe_int(ce.get("openInterest", 0))
-    ce_oi_chg = safe_int(ce.get("changeinOpenInterest", 0))
-    ce_prev_oi = ce_oi - ce_oi_chg
-    ce_oi_pct = safe_int((ce_oi_chg / ce_prev_oi * 100) if ce_prev_oi > 0 else 0)
-    ce_risk = safe_int(ce_ltp - max(spot_price - strike, 0))
+    # intrinsic values (IV)
+    ce_iv = max(spot_price - strike, 0)    # CE intrinsic
+    pe_iv = max(strike - spot_price, 0)    # PE intrinsic
 
+    ce_ltp = safe_int(ce.get("lastPrice", 0))
     pe_ltp = safe_int(pe.get("lastPrice", 0))
-    pe_oi = safe_int(pe.get("openInterest", 0))
-    pe_oi_chg = safe_int(pe.get("changeinOpenInterest", 0))
-    pe_prev_oi = pe_oi - pe_oi_chg
-    pe_oi_pct = safe_int((pe_oi_chg / pe_prev_oi * 100) if pe_prev_oi > 0 else 0)
-    pe_risk = safe_int(pe_ltp - max(strike - spot_price, 0))
+
+    # risk formulas (kept as previously implemented)
+    ce_risk = safe_int(ce_ltp - ce_iv)
+    pe_risk = safe_int(pe_ltp - pe_iv)
 
     rows.append({
         "strikePrice": strike,
+        "CE_OI": safe_int(ce.get("openInterest", 0)),
+        "CE_pchgOI": safe_int(ce.get("pchangeinOpenInterest", 0)),
         "CE_LTP": ce_ltp,
-        "CE_OI": ce_oi,
-        "CE_Change%": ce_oi_pct,
         "CE_Risk": ce_risk,
         "PE_LTP": pe_ltp,
-        "PE_OI": pe_oi,
-        "PE_Change%": pe_oi_pct,
+        "PE_pchgOI": safe_int(pe.get("pchangeinOpenInterest", 0)),
+        "PE_OI": safe_int(pe.get("openInterest", 0)),
         "PE_Risk": pe_risk
     })
 
-df = pd.DataFrame(rows).sort_values("strikePrice").reset_index(drop=True)
+df = pd.DataFrame(rows).drop_duplicates(subset=["strikePrice"]).sort_values("strikePrice").reset_index(drop=True)
 
-# ----------------- ATM ±6 strikes display -----------------
-atm_idx = (df["strikePrice"] - spot_price).abs().idxmin()
-start_idx = max(0, int(atm_idx)-6)
-end_idx = min(len(df)-1, int(atm_idx)+6)
-df_display = df.iloc[start_idx:end_idx+1].copy().reset_index(drop=True)
-atm_strike = df_display["strikePrice"].iloc[(df_display["strikePrice"] - spot_price).abs().argmin()]
+if df.empty:
+    st.error("No strike data available.")
+    st.stop()
 
-# ----------------- PCR (ATM ±4) -----------------
-start_idx4 = max(0, int(atm_idx)-4)
-end_idx4 = min(len(df_display)-1, int(atm_idx)+4)
-atm_window = df_display.iloc[start_idx4:end_idx4+1]
-atm_ce_oi = atm_window["CE_OI"].sum()
-atm_pe_oi = atm_window["PE_OI"].sum()
-atm_pcr = (atm_pe_oi / atm_ce_oi) if atm_ce_oi>0 else float("inf")
-atm_trend = "🟢 Bullish" if atm_pcr>1 else "🔴 Bearish"
+# ----------------- ATM-centric selection (±5 strikes) -----------------
+atm_idx_full = (df["strikePrice"] - spot_price).abs().idxmin()
+window_before = 5
+window_after = 5
+start_idx = max(0, int(atm_idx_full) - window_before)
+end_idx = min(len(df) - 1, int(atm_idx_full) + window_after)
+df_filtered = df.iloc[start_idx:end_idx + 1].copy().reset_index(drop=True)
 
-# ----------------- Full expiry Max OI -----------------
-max_ce_row = df.loc[df["CE_OI"].idxmax()]
-max_pe_row = df.loc[df["PE_OI"].idxmax()]
+# ensure ascending order
+df_filtered = df_filtered.sort_values("strikePrice").reset_index(drop=True)
 
-# ----------------- Fresh OI summary -----------------
-ce_builds = int((df_display["CE_Change%"]>0).sum())
-pe_builds = int((df_display["PE_Change%"]>0).sum())
-both_unwind = int(((df_display["CE_Change%"]<0) & (df_display["PE_Change%"]<0)).sum())
+# recompute ATM index & strike
+atm_idx_filtered = (df_filtered["strikePrice"] - spot_price).abs().idxmin()
+atm_strike = int(df_filtered.loc[atm_idx_filtered, "strikePrice"])
 
-# ----------------- Display table -----------------
-display_df = df_display.copy()
-display_df["Strike"] = display_df["strikePrice"].apply(lambda s: f"【ATM】 {s}" if s==atm_strike else str(s))
+# ----------------- Derived columns -----------------
+# CE-PE difference column
+df_filtered["CE_PE_Diff"] = df_filtered["CE_Risk"] - df_filtered["PE_Risk"]
 
-show_cols = ["CE_LTP","CE_OI","CE_Change%","CE_Risk",
-             "Strike",
-             "PE_Risk","PE_Change%","PE_OI","PE_LTP"]
+# PCR calculations
+total_pe_oi = int(df_filtered["PE_OI"].sum())
+total_ce_oi = int(df_filtered["CE_OI"].sum())
+total_pcr = (total_pe_oi / total_ce_oi) if total_ce_oi != 0 else float("inf")
+trend = "🟢 Bullish" if total_pcr > 1 else "🔴 Bearish"
 
-display_df = display_df[show_cols]
+# ATM ±4 PCR
+start_atm_idx = max(0, int(atm_idx_filtered) - 4)
+end_atm_idx = min(len(df_filtered) - 1, int(atm_idx_filtered) + 4)
+df_atm_window = df_filtered.iloc[start_atm_idx:end_atm_idx+1]
+atm_pe_oi = int(df_atm_window["PE_OI"].sum())
+atm_ce_oi = int(df_atm_window["CE_OI"].sum())
+atm_pcr = (atm_pe_oi / atm_ce_oi) if atm_ce_oi != 0 else float("inf")
+atm_trend = "🟢 Bullish" if atm_pcr > 1 else "🔴 Bearish"
+
+# ATM row percent change values for rocket logic
+atm_row = df_filtered.iloc[atm_idx_filtered]
+atm_ce_pct = int(atm_row.get("CE_pchgOI", 0))
+atm_pe_pct = int(atm_row.get("PE_pchgOI", 0))
+
+# ----------------- Rocket logic (Option B) -----------------
+rocket_symbol = "⚪"
+rocket_text = "Neutral"
+
+if (total_pcr > 1) and (atm_pe_oi > atm_ce_oi) and (atm_pe_pct > 0):
+    rocket_symbol = "🟢🚀"
+    rocket_text = "Strong Bullish"
+elif (total_pcr < 1) and (atm_ce_oi > atm_pe_oi) and (atm_ce_pct > 0):
+    rocket_symbol = "🔴🚀"
+    rocket_text = "Strong Bearish"
+else:
+    # partial confirmations
+    if (total_pcr > 1 and atm_pe_oi > atm_ce_oi) or (atm_pe_pct > 0 and atm_pe_oi > atm_ce_oi):
+        rocket_symbol = "🟡⚠️"
+        rocket_text = "Bullish but Risky"
+    elif (total_pcr < 1 and atm_ce_oi > atm_pe_oi) or (atm_ce_pct > 0 and atm_ce_oi > atm_pe_oi):
+        rocket_symbol = "🟡⚠️"
+        rocket_text = "Bearish but Risky"
+    else:
+        rocket_symbol = "🤔"
+        rocket_text = "Conflict / Wait"
+
+# ----------------- Prepare display table (symmetric layout) -----------------
+# Column order requested (I include Strike column to show [ATM] inline; Spot sits center)
+display = df_filtered.copy()
+display["StrikeLabel"] = display["strikePrice"].apply(lambda s: f"[ATM] {int(s)}" if int(s) == atm_strike else f"{int(s)}")
+# SPOT column repeated in each row (center)
+display["SPOT"] = safe_int(spot_price)
+
+# columns order: CE_OI, CE_%OI, CE_Risk, CE-PE Diff, CE_LTP, StrikeLabel, SPOT, PE_LTP, PE_Risk, PE_%OI, PE_OI
+display = display.rename(columns={"CE_pchgOI": "CE_%OI", "PE_pchgOI": "PE_%OI"})
+display = display[[
+    "CE_OI",
+    "CE_%OI",
+    "CE_Risk",
+    "CE_PE_Diff",
+    "CE_LTP",
+    "StrikeLabel",
+    "SPOT",
+    "PE_LTP",
+    "PE_Risk",
+    "PE_%OI",
+    "PE_OI"
+]]
+
+# Ensure integer types
+for c in ["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","SPOT","PE_LTP","PE_Risk","PE_%OI","PE_OI"]:
+    display[c] = display[c].fillna(0).astype(int)
+
+# ----------------- Styling -----------------
+max_ce_oi = int(display["CE_OI"].max()) if not display["CE_OI"].empty else 0
+max_pe_oi = int(display["PE_OI"].max()) if not display["PE_OI"].empty else 0
+
+ATM_BG = "#fff8cc"  # light yellow per your choice
 
 def style_row(row):
-    styles = [""]*len(row)
-    col_idx = {c:i for i,c in enumerate(display_df.columns)}
+    styles = [''] * len(row)
+    col_idx = {col: i for i, col in enumerate(display.columns)}
 
-    # CE coloring
-    if row["CE_Change%"]>0:
-        for c in ["CE_LTP","CE_OI","CE_Change%","CE_Risk"]:
-            styles[col_idx[c]]='background-color: #ffcdd2'
-    # PE coloring
-    if row["PE_Change%"]>0:
-        for c in ["PE_LTP","PE_OI","PE_Change%","PE_Risk"]:
-            styles[col_idx[c]]='background-color: #c8e6c9'
+    # CE%OI positive => shade CE side columns (light red)
+    if int(row["CE_%OI"]) > 0:
+        for c in ["CE_LTP", "CE_%OI", "CE_Risk", "CE_OI"]:
+            styles[col_idx[c]] = 'background-color: #ffcdd2'
 
-    # ATM strike bold
-    if str(row["Strike"]).startswith("【ATM】"):
-        for i in range(len(styles)):
-            styles[i]+='; font-weight: 700; border: 2px solid #000'
+    # PE%OI positive => shade PE side columns (light green)
+    if int(row["PE_%OI"]) > 0:
+        for c in ["PE_LTP", "PE_%OI", "PE_Risk", "PE_OI"]:
+            styles[col_idx[c]] = 'background-color: #c8e6c9'
 
-    # Risk colors
-    for col in ["CE_Risk","PE_Risk"]:
-        if row[col]>0:
-            styles[col_idx[col]+0]=styles[col_idx[col]]+'; color: green'
-        elif row[col]<0:
-            styles[col_idx[col]+0]=styles[col_idx[col]]+'; color: red'
+    # Max OI emphasis
+    if int(row["CE_OI"]) == max_ce_oi and max_ce_oi > 0:
+        styles[col_idx["CE_OI"]] = 'background-color: #e57373; font-weight: bold'
+    if int(row["PE_OI"]) == max_pe_oi and max_pe_oi > 0:
+        styles[col_idx["PE_OI"]] = 'background-color: #81c784; font-weight: bold'
+
+    # CE-PE Diff color coding (heatmap)
+    diff_val = int(row["CE_PE_Diff"])
+    base = styles[col_idx["CE_PE_Diff"]]
+    if diff_val > 0:
+        styles[col_idx["CE_PE_Diff"]] = (base + '; color: green; font-weight: 700') if base else 'color: green; font-weight: 700'
+    elif diff_val < 0:
+        styles[col_idx["CE_PE_Diff"]] = (base + '; color: red; font-weight: 700') if base else 'color: red; font-weight: 700'
+    else:
+        styles[col_idx["CE_PE_Diff"]] = (base + '; color: black') if base else 'color: black'
+
+    # Signed Risk colors for CE_Risk / PE_Risk
+    for col in ["CE_Risk", "PE_Risk"]:
+        val = int(row[col])
+        prev = styles[col_idx[col]]
+        if val > 0:
+            styles[col_idx[col]] = prev + '; color: green' if prev else 'color: green'
+        elif val < 0:
+            styles[col_idx[col]] = prev + '; color: red' if prev else 'color: red'
         else:
-            styles[col_idx[col]+0]=styles[col_idx[col]]+'; color: black'
+            styles[col_idx[col]] = prev + '; color: black' if prev else 'color: black'
+
+    # Entire ATM row highlight (full background)
+    try:
+        strike_label = str(row["StrikeLabel"])
+        if strike_label.startswith("[ATM]"):
+            # apply background to all cells in row (light yellow)
+            for i in range(len(styles)):
+                styles[i] = (styles[i] + f'; background-color: {ATM_BG}') if styles[i] else f'background-color: {ATM_BG}'
+            # make StrikeLabel bold and add border to emphasize
+            styles[col_idx["StrikeLabel"]] += '; border: 2px solid #000; font-weight: 700'
+    except Exception:
+        pass
+
     return styles
 
-styled = display_df.style.apply(style_row, axis=1)
+styled = display.style.apply(style_row, axis=1)
 
-# ----------------- Top PCR & Spot -----------------
-st.markdown(f"### 🧭 Spot: **{safe_int(spot_price)}** ({symbol})")
-st.markdown(f"**PCR (ATM ±4 strikes): {round(atm_pcr,2) if atm_pcr!=float('inf') else '∞'} → {atm_trend}**")
+# ----------------- Bottom ticker -----------------
+st.markdown("---")
+pcr_display = (f"{total_pcr:.2f}" if total_pcr != float("inf") else "∞")
+atm_pcr_display = (f"{atm_pcr:.2f}" if atm_pcr != float("inf") else "∞")
+st.markdown(
+    f"**Live Snapshot:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+    f"Spot: {safe_int(spot_price)} | "
+    f"PCR (all shown): {pcr_display} → {trend} | "
+    f"PCR (ATM ±4): {atm_pcr_display} → {atm_trend} | {rocket_symbol} {rocket_text}"
+)
 
 # ----------------- Display table -----------------
-st.write("### 🔍 ATM ±6 Strike Option Chain")
-st.dataframe(styled,use_container_width=True,hide_index=True)
-
+st.write("### 🔍 ATM ±6 Strike Option Chain (ascending strikes)")
+try:
+    st.dataframe(styled, use_container_width=True, hide_index=True)
+except Exception:
+    st.write(styled.to_html(), unsafe_allow_html=True)
 # ----------------- Max OI block -----------------
 col1,col2 = st.columns([1,1])
 with col1:
