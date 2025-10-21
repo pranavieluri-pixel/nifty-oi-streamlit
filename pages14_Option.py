@@ -1,4 +1,4 @@
-# filename: pages14_Option.py
+# filename: pages_Option_Chain_Full.py
 import requests
 import pandas as pd
 import streamlit as st
@@ -30,10 +30,6 @@ def safe_float(x):
         return round(float(x), 1)
     except:
         return 0.0
-
-# ----------------- Initialize session state -----------------
-if "max_oi_history" not in st.session_state:
-    st.session_state.max_oi_history = []
 
 # ----------------- UI -----------------
 st.title("📊 NIFTY / BANKNIFTY Option Chain — Full OI Tracker")
@@ -159,6 +155,8 @@ else:
 # ----------------- Display table -----------------
 display = df_filtered.copy()
 display["Strike"] = display["strikePrice"].apply(lambda s: f"[ATM] {s}" if s==atm_strike else f"{s}")
+
+# Reorder columns
 display = display[["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","Strike","PE_LTP","PE_Risk","PE_%OI","PE_OI"]]
 
 # Styling
@@ -168,6 +166,7 @@ def style_row(row):
     styles=[""]*len(row)
     col_idx = {col:i for i,col in enumerate(display.columns)}
 
+    # Fresh OI
     if row["CE_%OI"]>0:
         for c in ["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP"]:
             styles[col_idx[c]]='background-color:#ffcdd2'
@@ -175,11 +174,13 @@ def style_row(row):
         for c in ["PE_OI","PE_%OI","PE_Risk","PE_LTP"]:
             styles[col_idx[c]]='background-color:#c8e6c9'
 
+    # Max OI highlight
     if row["CE_OI"]==max_ce_oi:
         styles[col_idx["CE_OI"]]='background-color:#e57373;font-weight:700'
     if row["PE_OI"]==max_pe_oi:
         styles[col_idx["PE_OI"]]='background-color:#81c784;font-weight:700'
 
+    # Risk colors
     if row["CE_Risk"]>0: styles[col_idx["CE_Risk"]]='color:green;font-weight:700'
     elif row["CE_Risk"]<0: styles[col_idx["CE_Risk"]]='color:red;font-weight:700'
     if row["PE_Risk"]>0: styles[col_idx["PE_Risk"]]='color:green;font-weight:700'
@@ -187,6 +188,7 @@ def style_row(row):
     if row["CE_PE_Diff"]>0: styles[col_idx["CE_PE_Diff"]]='color:green;font-weight:700'
     elif row["CE_PE_Diff"]<0: styles[col_idx["CE_PE_Diff"]]='color:red;font-weight:700'
 
+    # ATM strike
     if str(row["Strike"]).startswith("[ATM]"):
         for i in range(len(styles)):
             styles[i] = (styles[i]+'; background-color:#fff8cc') if styles[i] else 'background-color:#fff8cc'
@@ -208,52 +210,62 @@ st.markdown(
 st.write("### 🔍 ATM ±6 Strike Option Chain (with CE/PE Risk & CE-PE Diff)")
 st.dataframe(styled,use_container_width=True, hide_index=True)
 
-# ----------------- Max OI history chart (Altair) with ATM markers -----------------
-timestamp = ist_now.strftime("%H:%M:%S")
+# ----------------- Max OI history chart -----------------
+if "max_oi_history" not in st.session_state:
+    st.session_state.max_oi_history = []
 
-max_ce_oi_idx = df_filtered["CE_OI"].idxmax()
-max_ce_pct_idx = df_filtered["CE_%OI"].idxmax()
-max_pe_oi_idx = df_filtered["PE_OI"].idxmax()
-max_pe_pct_idx = df_filtered["PE_%OI"].idxmax()
+# IST timestamp
+timestamp = (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S")
+
+# Add ATM ±6 strike info
+atm_window = df_filtered.copy()
+max_ce_oi_strike = atm_window["CE_OI"].idxmax() if not atm_window.empty else 0
+max_ce_pct_strike = atm_window["CE_%OI"].idxmax() if not atm_window.empty else 0
+max_pe_oi_strike = atm_window["PE_OI"].idxmax() if not atm_window.empty else 0
+max_pe_pct_strike = atm_window["PE_%OI"].idxmax() if not atm_window.empty else 0
+atm_actual_strike = atm_strike
 
 st.session_state.max_oi_history.append({
     "time": timestamp,
-    "Max_CE_OI": df_filtered.loc[max_ce_oi_idx,"strikePrice"],
-    "Max_CE_%OI": df_filtered.loc[max_ce_pct_idx,"strikePrice"],
-    "Max_PE_OI": df_filtered.loc[max_pe_oi_idx,"strikePrice"],
-    "Max_PE_%OI": df_filtered.loc[max_pe_pct_idx,"strikePrice"],
-    "ATM_Strike": atm_strike
+    "Max_CE_OI": atm_window.loc[max_ce_oi_strike,"strikePrice"] if not atm_window.empty else 0,
+    "Max_CE_%OI": atm_window.loc[max_ce_pct_strike,"strikePrice"] if not atm_window.empty else 0,
+    "Max_PE_OI": atm_window.loc[max_pe_oi_strike,"strikePrice"] if not atm_window.empty else 0,
+    "Max_PE_%OI": atm_window.loc[max_pe_pct_strike,"strikePrice"] if not atm_window.empty else 0,
+    "ATM_Strike": atm_actual_strike
 })
 
 st.session_state.max_oi_history = st.session_state.max_oi_history[-20:]
-hist_df = pd.DataFrame(st.session_state.max_oi_history).set_index("time")
 
-pe_support_strike = df_filtered["strikePrice"].iloc[df_filtered["PE_OI"].idxmax()]
-strike_step = 50 if symbol=="NIFTY" else 100
-min_y = pe_support_strike - 2*strike_step
-max_y = df_filtered["strikePrice"].max()
+# User input for Y-axis min
+min_y_input = st.number_input("Set Y-axis min value for chart:", value=24000, step=50)
 
-hist_long = hist_df.reset_index().melt(id_vars="time", var_name="Type", value_name="Strike")
+# Prepare chart DataFrame
+hist_df_filtered = pd.DataFrame(st.session_state.max_oi_history).copy()
+for col in ["Max_CE_OI","Max_CE_%OI","Max_PE_OI","Max_PE_%OI","ATM_Strike"]:
+    hist_df_filtered[col] = hist_df_filtered[col].astype(float).round(1)
 
+# Melt for Altair
+hist_long = hist_df_filtered.melt(id_vars="time", var_name="Type", value_name="Strike")
+
+# Build Altair chart
 line_chart = alt.Chart(hist_long[hist_long["Type"]!="ATM_Strike"]).mark_line(point=True).encode(
     x=alt.X('time:T', title='Time (IST)'),
-    y=alt.Y('Strike:Q', scale=alt.Scale(domain=[min_y, max_y])),
+    y=alt.Y('Strike:Q', scale=alt.Scale(domain=[min_y_input, hist_long["Strike"].max()])),
     color=alt.Color('Type:N', scale=alt.Scale(domain=['Max_CE_OI','Max_CE_%OI','Max_PE_OI','Max_PE_%OI'],
                                               range=['green','lightgreen','red','orange'])),
     tooltip=['time','Type','Strike']
 )
 
-atm_chart = alt.Chart(hist_df.reset_index()).mark_point(filled=True, shape='triangle-up', size=100, color='blue').encode(
+atm_chart = alt.Chart(hist_long[hist_long["Type"]=="ATM_Strike"]).mark_point(filled=True, shape='triangle-up', size=100, color='blue').encode(
     x='time:T',
-    y='ATM_Strike:Q',
-    tooltip=['time','ATM_Strike']
+    y='Strike:Q',
+    tooltip=['time','Strike']
 )
 
-final_chart = line_chart + atm_chart
-final_chart = final_chart.properties(
+final_chart = (line_chart + atm_chart).properties(
     height=400,
     width=800,
-    title="📈 Max CE/PE OI & %OI Strike Evolution (Last 20 snapshots, ATM ±6 strikes, ATM marker in blue)"
+    title="📈 Max CE/PE OI & %OI Strike Evolution (ATM ±6 strikes, ATM marker in blue)"
 ).interactive()
 
 st.altair_chart(final_chart, use_container_width=True)
