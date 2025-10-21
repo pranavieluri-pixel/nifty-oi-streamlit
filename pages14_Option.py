@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
+import altair as alt
 
 st.set_page_config(page_title="NIFTY & BANKNIFTY Option Chain - Full OI Tracker", layout="wide")
 
@@ -153,9 +154,9 @@ else:
 
 # ----------------- Display table -----------------
 display = df_filtered.copy()
-display["Strike"] = display["strikePrice"].apply(lambda s: f"[ATM] {s:.1f}" if s==atm_strike else f"{s:.1f}")
+display["Strike"] = display["strikePrice"].apply(lambda s: f"[ATM] {s}" if s==atm_strike else f"{s}")
 
-# Reorder columns
+# Reorder columns as requested
 display = display[["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","Strike","PE_LTP","PE_Risk","PE_%OI","PE_OI"]]
 
 # Styling
@@ -216,26 +217,35 @@ if "max_oi_history" not in st.session_state:
 # IST timestamp
 timestamp = (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S")
 
-# Use only ATM ±6 strikes for Max OI chart
-df_chart = df_filtered.copy()
-max_ce_oi_strike = df_chart["CE_OI"].idxmax() if not df_chart.empty else 0
-max_ce_pct_strike = df_chart["CE_%OI"].idxmax() if not df_chart.empty else 0
-max_pe_oi_strike = df_chart["PE_OI"].idxmax() if not df_chart.empty else 0
-max_pe_pct_strike = df_chart["PE_%OI"].idxmax() if not df_chart.empty else 0
+# Only consider ATM ±6 strikes for max OI chart
+atm_window_df = df_filtered.copy()
+
+max_ce_oi_strike = atm_window_df["CE_OI"].idxmax() if not atm_window_df.empty else 0
+max_ce_pct_strike = atm_window_df["CE_%OI"].idxmax() if not atm_window_df.empty else 0
+max_pe_oi_strike = atm_window_df["PE_OI"].idxmax() if not atm_window_df.empty else 0
+max_pe_pct_strike = atm_window_df["PE_%OI"].idxmax() if not atm_window_df.empty else 0
 
 st.session_state.max_oi_history.append({
     "time":timestamp,
-    "Max_CE_OI":df_chart.loc[max_ce_oi_strike,"strikePrice"] if not df_chart.empty else 0,
-    "Max_CE_%OI":df_chart.loc[max_ce_pct_strike,"strikePrice"] if not df_chart.empty else 0,
-    "Max_PE_OI":df_chart.loc[max_pe_oi_strike,"strikePrice"] if not df_chart.empty else 0,
-    "Max_PE_%OI":df_chart.loc[max_pe_pct_strike,"strikePrice"] if not df_chart.empty else 0,
+    "Max_CE_OI":atm_window_df.loc[max_ce_oi_strike,"strikePrice"] if not atm_window_df.empty else 0,
+    "Max_CE_%OI":atm_window_df.loc[max_ce_pct_strike,"strikePrice"] if not atm_window_df.empty else 0,
+    "Max_PE_OI":atm_window_df.loc[max_pe_oi_strike,"strikePrice"] if not atm_window_df.empty else 0,
+    "Max_PE_%OI":atm_window_df.loc[max_pe_pct_strike,"strikePrice"] if not atm_window_df.empty else 0,
 })
 
 st.session_state.max_oi_history = st.session_state.max_oi_history[-20:]
 hist_df = pd.DataFrame(st.session_state.max_oi_history).set_index("time")
 
-# Manual Y-axis minimum
+# ----------------- Manual Y-axis -----------------
 manual_min_y = st.number_input("Set chart Y-axis minimum:", min_value=0, value=24000, step=50)
 
 st.write("### 📈 Max CE/PE OI & %OI Strike Evolution (Last 20 snapshots)")
-st.line_chart(hist_df, use_container_width=True)
+
+if not hist_df.empty:
+    chart = alt.Chart(hist_df.reset_index().melt(id_vars='time')).mark_line(point=True).encode(
+        x='time:T',
+        y=alt.Y('value:Q', scale=alt.Scale(domain=[manual_min_y, hist_df.values.max()+100])),
+        color='variable:N',
+        tooltip=['time', 'variable', 'value']
+    ).interactive()
+    st.altair_chart(chart, use_container_width=True)
