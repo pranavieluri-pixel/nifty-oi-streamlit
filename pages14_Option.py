@@ -4,7 +4,6 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
-import altair as alt
 
 st.set_page_config(page_title="NIFTY & BANKNIFTY Option Chain - Full OI Tracker", layout="wide")
 
@@ -154,9 +153,10 @@ else:
 
 # ----------------- Display table -----------------
 display = df_filtered.copy()
+display = display.round(1)  # All numeric values to 1 decimal
 display["Strike"] = display["strikePrice"].apply(lambda s: f"[ATM] {s}" if s==atm_strike else f"{s}")
 
-# Reorder columns
+# Reorder columns as requested
 display = display[["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","Strike","PE_LTP","PE_Risk","PE_%OI","PE_OI"]]
 
 # Styling
@@ -199,7 +199,7 @@ def style_row(row):
 styled = display.style.apply(style_row, axis=1)
 
 # ----------------- Display -----------------
-ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)  # convert UTC → IST
 st.markdown("---")
 st.markdown(
     f"**Live Snapshot (IST):** {ist_now.strftime('%Y-%m-%d %H:%M:%S')} | "
@@ -217,55 +217,33 @@ if "max_oi_history" not in st.session_state:
 # IST timestamp
 timestamp = (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S")
 
-# Add ATM ±6 strike info
+# ATM ±6 strikes data
 atm_window = df_filtered.copy()
 max_ce_oi_strike = atm_window["CE_OI"].idxmax() if not atm_window.empty else 0
 max_ce_pct_strike = atm_window["CE_%OI"].idxmax() if not atm_window.empty else 0
 max_pe_oi_strike = atm_window["PE_OI"].idxmax() if not atm_window.empty else 0
 max_pe_pct_strike = atm_window["PE_%OI"].idxmax() if not atm_window.empty else 0
-atm_actual_strike = atm_strike
 
 st.session_state.max_oi_history.append({
     "time": timestamp,
-    "Max_CE_OI": atm_window.loc[max_ce_oi_strike,"strikePrice"] if not atm_window.empty else 0,
-    "Max_CE_%OI": atm_window.loc[max_ce_pct_strike,"strikePrice"] if not atm_window.empty else 0,
-    "Max_PE_OI": atm_window.loc[max_pe_oi_strike,"strikePrice"] if not atm_window.empty else 0,
-    "Max_PE_%OI": atm_window.loc[max_pe_pct_strike,"strikePrice"] if not atm_window.empty else 0,
-    "ATM_Strike": atm_actual_strike
+    "Max_CE_OI": atm_window.loc[max_ce_oi_strike,"strikePrice"] if not atm_window.empty else 0.0,
+    "Max_CE_%OI": atm_window.loc[max_ce_pct_strike,"strikePrice"] if not atm_window.empty else 0.0,
+    "Max_PE_OI": atm_window.loc[max_pe_oi_strike,"strikePrice"] if not atm_window.empty else 0.0,
+    "Max_PE_%OI": atm_window.loc[max_pe_pct_strike,"strikePrice"] if not atm_window.empty else 0.0,
 })
 
+# Keep last 20 snapshots
 st.session_state.max_oi_history = st.session_state.max_oi_history[-20:]
+
+# Prepare DataFrame
+hist_df = pd.DataFrame(st.session_state.max_oi_history).set_index("time")
+hist_df = hist_df.round(1)  # all values 1 decimal
 
 # User input for Y-axis min
 min_y_input = st.number_input("Set Y-axis min value for chart:", value=24000, step=50)
 
-# Prepare chart DataFrame
-hist_df_filtered = pd.DataFrame(st.session_state.max_oi_history).copy()
-for col in ["Max_CE_OI","Max_CE_%OI","Max_PE_OI","Max_PE_%OI","ATM_Strike"]:
-    hist_df_filtered[col] = hist_df_filtered[col].astype(float).round(1)
+# Clip chart to manual min Y
+hist_df = hist_df.clip(lower=min_y_input)
 
-# Melt for Altair
-hist_long = hist_df_filtered.melt(id_vars="time", var_name="Type", value_name="Strike")
-
-# Build Altair chart
-line_chart = alt.Chart(hist_long[hist_long["Type"]!="ATM_Strike"]).mark_line(point=True).encode(
-    x=alt.X('time:T', title='Time (IST)'),
-    y=alt.Y('Strike:Q', scale=alt.Scale(domain=[min_y_input, hist_long["Strike"].max()])),
-    color=alt.Color('Type:N', scale=alt.Scale(domain=['Max_CE_OI','Max_CE_%OI','Max_PE_OI','Max_PE_%OI'],
-                                              range=['green','lightgreen','red','orange'])),
-    tooltip=['time','Type','Strike']
-)
-
-atm_chart = alt.Chart(hist_long[hist_long["Type"]=="ATM_Strike"]).mark_point(filled=True, shape='triangle-up', size=100, color='blue').encode(
-    x='time:T',
-    y='Strike:Q',
-    tooltip=['time','Strike']
-)
-
-final_chart = (line_chart + atm_chart).properties(
-    height=400,
-    width=800,
-    title="📈 Max CE/PE OI & %OI Strike Evolution (ATM ±6 strikes, ATM marker in blue)"
-).interactive()
-
-st.altair_chart(final_chart, use_container_width=True)
+st.write("### 📈 Max CE/PE OI & %OI Strike Evolution (Last 20 snapshots, ATM ±6 strikes)")
+st.line_chart(hist_df, use_container_width=True)
