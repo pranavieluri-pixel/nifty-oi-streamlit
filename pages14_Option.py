@@ -153,10 +153,9 @@ else:
 
 # ----------------- Display table -----------------
 display = df_filtered.copy()
-display = display.round(1)  # All numeric values to 1 decimal
-display["Strike"] = display["strikePrice"].apply(lambda s: f"[ATM] {s}" if s==atm_strike else f"{s}")
+display["Strike"] = display["strikePrice"].apply(lambda s: f"[ATM] {s:.1f}" if s==atm_strike else f"{s:.1f}")
 
-# Reorder columns as requested
+# Reorder columns
 display = display[["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","Strike","PE_LTP","PE_Risk","PE_%OI","PE_OI"]]
 
 # Styling
@@ -217,33 +216,26 @@ if "max_oi_history" not in st.session_state:
 # IST timestamp
 timestamp = (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S")
 
-# ATM ±6 strikes data
-atm_window = df_filtered.copy()
-max_ce_oi_strike = atm_window["CE_OI"].idxmax() if not atm_window.empty else 0
-max_ce_pct_strike = atm_window["CE_%OI"].idxmax() if not atm_window.empty else 0
-max_pe_oi_strike = atm_window["PE_OI"].idxmax() if not atm_window.empty else 0
-max_pe_pct_strike = atm_window["PE_%OI"].idxmax() if not atm_window.empty else 0
+# Use only ATM ±6 strikes for Max OI chart
+df_chart = df_filtered.copy()
+max_ce_oi_strike = df_chart["CE_OI"].idxmax() if not df_chart.empty else 0
+max_ce_pct_strike = df_chart["CE_%OI"].idxmax() if not df_chart.empty else 0
+max_pe_oi_strike = df_chart["PE_OI"].idxmax() if not df_chart.empty else 0
+max_pe_pct_strike = df_chart["PE_%OI"].idxmax() if not df_chart.empty else 0
 
 st.session_state.max_oi_history.append({
-    "time": timestamp,
-    "Max_CE_OI": atm_window.loc[max_ce_oi_strike,"strikePrice"] if not atm_window.empty else 0.0,
-    "Max_CE_%OI": atm_window.loc[max_ce_pct_strike,"strikePrice"] if not atm_window.empty else 0.0,
-    "Max_PE_OI": atm_window.loc[max_pe_oi_strike,"strikePrice"] if not atm_window.empty else 0.0,
-    "Max_PE_%OI": atm_window.loc[max_pe_pct_strike,"strikePrice"] if not atm_window.empty else 0.0,
+    "time":timestamp,
+    "Max_CE_OI":df_chart.loc[max_ce_oi_strike,"strikePrice"] if not df_chart.empty else 0,
+    "Max_CE_%OI":df_chart.loc[max_ce_pct_strike,"strikePrice"] if not df_chart.empty else 0,
+    "Max_PE_OI":df_chart.loc[max_pe_oi_strike,"strikePrice"] if not df_chart.empty else 0,
+    "Max_PE_%OI":df_chart.loc[max_pe_pct_strike,"strikePrice"] if not df_chart.empty else 0,
 })
 
-# Keep last 20 snapshots
 st.session_state.max_oi_history = st.session_state.max_oi_history[-20:]
-
-# Prepare DataFrame
 hist_df = pd.DataFrame(st.session_state.max_oi_history).set_index("time")
-hist_df = hist_df.round(1)  # all values 1 decimal
 
-# User input for Y-axis min
-min_y_input = st.number_input("Set Y-axis min value for chart:", value=24000, step=50)
+# Manual Y-axis minimum
+manual_min_y = st.number_input("Set chart Y-axis minimum:", min_value=0, value=24000, step=50)
 
-# Clip chart to manual min Y
-hist_df = hist_df.clip(lower=min_y_input)
-
-st.write("### 📈 Max CE/PE OI & %OI Strike Evolution (Last 20 snapshots, ATM ±6 strikes)")
+st.write("### 📈 Max CE/PE OI & %OI Strike Evolution (Last 20 snapshots)")
 st.line_chart(hist_df, use_container_width=True)
