@@ -2,7 +2,7 @@
 import requests
 import pandas as pd
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(page_title="NIFTY & BANKNIFTY Option Chain - Full OI Tracker", layout="wide")
@@ -24,11 +24,11 @@ def fetch_option_chain(symbol):
     r.raise_for_status()
     return r.json()
 
-def safe_int(x):
+def safe_float(x):
     try:
-        return round(float(x),1)
+        return round(float(x), 1)
     except:
-        return 0
+        return 0.0
 
 # ----------------- UI -----------------
 st.title("📊 NIFTY / BANKNIFTY Option Chain — Full OI Tracker")
@@ -76,35 +76,35 @@ if not filtered_rows:
     st.error(f"No strikes found for selected expiry: {selected_expiry}")
     st.stop()
 
-spot_price = float(underlying_value) if underlying_value is not None else 0.0
+spot_price = safe_float(underlying_value)
 
 # ----------------- Build DataFrame -----------------
 rows = []
 for r in filtered_rows:
-    strike = safe_int(r.get("strikePrice", 0))
+    strike = safe_float(r.get("strikePrice", 0))
     ce = r.get("CE") or {}
     pe = r.get("PE") or {}
 
-    ce_ltp = safe_int(ce.get("lastPrice", 0))
-    pe_ltp = safe_int(pe.get("lastPrice", 0))
+    ce_ltp = safe_float(ce.get("lastPrice", 0))
+    pe_ltp = safe_float(pe.get("lastPrice", 0))
 
     ce_iv = max(spot_price - strike,0)
     pe_iv = max(strike - spot_price,0)
 
-    ce_risk = safe_int(ce_ltp - ce_iv)
-    pe_risk = safe_int(pe_ltp - pe_iv)
-    ce_pe_diff = safe_int(ce_risk - pe_risk)
+    ce_risk = safe_float(ce_ltp - ce_iv)
+    pe_risk = safe_float(pe_ltp - pe_iv)
+    ce_pe_diff = safe_float(ce_risk - pe_risk)
 
     rows.append({
         "strikePrice": strike,
         "CE_LTP": ce_ltp,
-        "CE_%OI": safe_int(ce.get("pchangeinOpenInterest",0)),
+        "CE_%OI": safe_float(ce.get("pchangeinOpenInterest",0)),
         "CE_Risk": ce_risk,
-        "CE_OI": safe_int(ce.get("openInterest",0)),
+        "CE_OI": safe_float(ce.get("openInterest",0)),
         "PE_LTP": pe_ltp,
-        "PE_%OI": safe_int(pe.get("pchangeinOpenInterest",0)),
+        "PE_%OI": safe_float(pe.get("pchangeinOpenInterest",0)),
         "PE_Risk": pe_risk,
-        "PE_OI": safe_int(pe.get("openInterest",0)),
+        "PE_OI": safe_float(pe.get("openInterest",0)),
         "CE_PE_Diff": ce_pe_diff
     })
 
@@ -159,8 +159,8 @@ display["Strike"] = display["strikePrice"].apply(lambda s: f"[ATM] {s}" if s==at
 display = display[["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","Strike","PE_LTP","PE_Risk","PE_%OI","PE_OI"]]
 
 # Styling
-max_ce_oi = int(df_filtered["CE_OI"].max())
-max_pe_oi = int(df_filtered["PE_OI"].max())
+max_ce_oi = df_filtered["CE_OI"].max()
+max_pe_oi = df_filtered["PE_OI"].max()
 def style_row(row):
     styles=[""]*len(row)
     col_idx = {col:i for i,col in enumerate(display.columns)}
@@ -198,11 +198,12 @@ def style_row(row):
 styled = display.style.apply(style_row, axis=1)
 
 # ----------------- Display -----------------
+ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)  # convert UTC → IST
 st.markdown("---")
 st.markdown(
-    f"**Live Snapshot:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
-    f"Spot: {safe_int(spot_price)} | PCR (all shown): {total_pcr:.2f} → {trend} | "
-    f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend} | {rocket_symbol} {rocket_text}"
+    f"**Live Snapshot (IST):** {ist_now.strftime('%Y-%m-%d %H:%M:%S')} | "
+    f"Spot: {spot_price:.1f} | PCR (all shown): {total_pcr:.2f} → {trend} | "
+    f"PCR (ATM ±4): {atm_pcr:.1f} → {atm_trend} | {rocket_symbol} {rocket_text}"
 )
 
 st.write("### 🔍 ATM ±6 Strike Option Chain (with CE/PE Risk & CE-PE Diff)")
@@ -212,7 +213,9 @@ st.dataframe(styled,use_container_width=True, hide_index=True)
 if "max_oi_history" not in st.session_state:
     st.session_state.max_oi_history = []
 
-timestamp = datetime.now().strftime("%H:%M:%S")
+# IST timestamp
+timestamp = (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M:%S")
+
 max_ce_oi_strike = df["CE_OI"].idxmax() if not df.empty else 0
 max_ce_pct_strike = df["CE_%OI"].idxmax() if not df.empty else 0
 max_pe_oi_strike = df["PE_OI"].idxmax() if not df.empty else 0
@@ -228,5 +231,12 @@ st.session_state.max_oi_history.append({
 
 st.session_state.max_oi_history = st.session_state.max_oi_history[-20:]
 hist_df = pd.DataFrame(st.session_state.max_oi_history).set_index("time")
+
+# Adjust y-axis scale to 2 strikes below PE support strike
+pe_support_strike = df["strikePrice"].iloc[df["PE_OI"].idxmax()]
+strike_step = 50 if symbol=="NIFTY" else 100
+min_y = pe_support_strike - 2*strike_step
+max_y = df["strikePrice"].max()
+
 st.write("### 📈 Max CE/PE OI & %OI Strike Evolution (Last 20 snapshots)")
-st.line_chart(hist_df)
+st.line_chart(hist_df, use_container_width=True)
