@@ -236,3 +236,24 @@ with col2:
     st.write(f"CE builds (resistance): {ce_builds}")
     st.write(f"PE builds (support): {pe_builds}")
     st.write(f"Both sides unwinding: {both_unwind}")
+
+# ----------------- Max OI block -----------------
+col1,col2 = st.columns([1,1])
+with col1:
+    st.write("**📌 Max OI (Full expiry)**")
+    st.write(f"Max CE OI: {max_ce_row['CE_OI']} | LTP: {max_ce_row['CE_LTP']} | Change%: {max_ce_row['CE_Change%']} | Risk: {max_ce_row['CE_Risk']}")
+    st.write(f"Max PE OI: {max_pe_row['PE_OI']} | LTP: {max_pe_row['PE_LTP']} | Change%: {max_pe_row['PE_Change%']} | Risk: {max_pe_row['PE_Risk']}")
+
+with col2:
+    st.write("**🟢🔴 Fresh OI summary (Directional)**")
+    st.write(f"CE builds (resistance): {ce_builds}")
+    st.write(f"PE builds (support): {pe_builds}")
+    st.write(f"Both sides unwinding: {both_unwind}")
+
+# ----------------- Bottom ticker -----------------
+st.markdown("---")
+st.markdown(
+    f"**Live Snapshot:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+    f"Spot: {safe_int(spot_price)} | "
+    f"PCR (ATM ±4): {round(atm_pcr,2) if atm_pcr!=float('inf') else '∞'}"
+)
