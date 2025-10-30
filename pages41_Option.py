@@ -323,7 +323,6 @@ if flip_alerts:
         else:
             st.error(f"Failed sending flip email ({strike}): {err}")
 
-
 # ----------------- Periodic summary every 60 seconds -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
 
@@ -416,7 +415,6 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
-
 
 
 
