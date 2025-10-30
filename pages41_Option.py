@@ -326,7 +326,7 @@ if flip_alerts:
 # ----------------- Periodic summary every 60 seconds (Option A) -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
 
-# compute a simple rocket sentiment for header (safe to compute here)
+# compute a simple rocket sentiment for header
 if "Bearish" in trend and "Bearish" in atm_trend:
     rocket_symbol = "🔴🚀"
     rocket_text = "Strong Bearish"
@@ -348,39 +348,38 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             f"{rocket_symbol} {rocket_text}"
         )
 
-        # ----- FIND MAX OI (using the display window) -----
-        # guard against empty display (shouldn't happen but safe)
+        # ----- FIND MAX OI -----
         if not display.empty:
             max_put_oi_strike = display.loc[display['PE_OI'].idxmax(), 'StrikeLabel']
             max_call_oi_strike = display.loc[display['CE_OI'].idxmax(), 'StrikeLabel']
         else:
             max_put_oi_strike = "N/A"
             max_call_oi_strike = "N/A"
-
         max_oi_line = f"Max PUT OI: {max_put_oi_strike} | Max CALL OI: {max_call_oi_strike}"
 
-        # ----- TABLE BODY (plain text) -----
+        # ----- TABLE -----
         table_text = display.to_string(index=False)
 
-        # ----- COMPOSE BODY -----
+        # ----- COMPOSE FULL BODY -----
         email_body = (
             f"{header_line}\n"
             f"{max_oi_line}\n"
-            f"{'-'*90}\n"
+            f"{'-'*110}\n"
             f"{table_text}\n"
-            f"{'-'*90}\n"
+            f"{'-'*110}\n"
             f"Auto-sent by Option Tracker"
         )
 
-        # ----- EMAIL SUBJECT and SEND (plain-text) -----
-        subject = f"{symbol} Option Summary @ {now.strftime('%H:%M:%S')}"
-        ok, err = send_email_simple(subject, email_body, to_addr=ALERT_EMAIL)
+        # ----- EMAIL SUBJECT -----
+        subject = f"{symbol} Option Summary ({now.strftime('%Y-%m-%d %H:%M:%S')})"
 
+        # ----- SEND EMAIL -----
+        ok, err = send_email_simple(subject, email_body, to_addr=ALERT_EMAIL)
         if ok:
-            st.success("Summary email sent.")
+            st.success("✅ Summary email sent.")
             st.session_state.last_summary_sent = now
         else:
-            st.error(f"Failed to send summary email: {err}")
+            st.error(f"❌ Failed to send summary email: {err}")
 
     except Exception as e:
         st.error(f"Error preparing/sending summary email: {e}")
