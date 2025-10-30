@@ -333,12 +333,6 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         put_col = "PE_OI"
         strike_col = "StrikeLabel"
 
-        # --- Handle missing variables safely ---
-        spot = spot_price if 'spot_price' in locals() else "N/A"
-        pcr_all = pcr_all_str if 'pcr_all_str' in locals() else "N/A"
-        pcr_atm = pcr_atm_str if 'pcr_atm_str' in locals() else "N/A"
-        signal = pcr_signal if 'pcr_signal' in locals() else "N/A"
-
         # --- Get max OI strikes safely ---
         max_put_strike = df.loc[df[put_col] == df[put_col].max(), strike_col].iloc[0]
         max_call_strike = df.loc[df[call_col] == df[call_col].max(), strike_col].iloc[0]
@@ -348,10 +342,10 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         <div style="font-family:Arial; font-size:14px; line-height:1.5;">
         <b>Summary:</b> {now.strftime('%Y-%m-%d %H:%M:%S')} |
         <span style='color:#7B68EE;'>🟣 Max Call OI Strike:</span> <b>{max_call_strike}</b> |
-        <span style='color:#1E90FF;'>Spot:</span> <b>{spot}</b> |
-        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all}</b> |
-        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm}</b> |
-        <b>{signal}</b><br>
+        <span style='color:#1E90FF;'>Spot:</span> <b>{spot_price}</b> |
+        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all_str}</b> |
+        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm_str}</b> |
+        <b>{pcr_signal}</b><br>
         <span style='color:#32CD32;'>🟢 Max Put OI Strike:</span> <b>{max_put_strike}</b><br>
         <hr style="border:0; border-top:1px solid #aaa;">
         </div>
