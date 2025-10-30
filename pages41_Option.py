@@ -349,28 +349,30 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
                 return x
 
         # ---- Prepare header line (exactly as shown in app, with colors) ----
-        trend_display = trend  # e.g. 🟡⚠️ Bullish but Risky
+        trend_display = trend        # e.g. 🟡⚠️ Bullish but Risky
         atm_trend_display = atm_trend
 
-        # Choose rocket symbol only if very strong sentiment
+        # Choose rocket symbol if very strong sentiment
         rocket_symbol = "🚀" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
 
-        # Assign color based on trend text
+        # ---- Better color function that works with emojis too ----
         def colorize_trend(text):
             if "Bullish" in text:
                 if "Risky" in text:
-                    return f'<span style="color:#ffcc00;font-weight:bold;">{text}</span>'
+                    return f"<span style='color:#ffcc00;font-weight:bold;'>{text}</span>"
                 elif "Strong" in text:
-                    return f'<span style="color:#00cc44;font-weight:bold;">{text}</span>'
+                    return f"<span style='color:#00cc44;font-weight:bold;'>{text}</span>"
                 else:
-                    return f'<span style="color:#33cc33;font-weight:bold;">{text}</span>'
+                    return f"<span style='color:#33cc33;font-weight:bold;'>{text}</span>"
             elif "Bearish" in text:
                 if "Strong" in text:
-                    return f'<span style="color:#ff3333;font-weight:bold;">{text}</span>'
+                    return f"<span style='color:#ff3333;font-weight:bold;'>{text}</span>"
                 else:
-                    return f'<span style="color:#cc0000;font-weight:bold;">{text}</span>'
+                    return f"<span style='color:#cc0000;font-weight:bold;'>{text}</span>"
+            elif "Neutral" in text:
+                return f"<span style='color:#999999;'>{text}</span>"
             else:
-                return f'<span style="color:#999999;">{text}</span>'
+                return text  # fallback (keeps emoji intact)
 
         trend_html = colorize_trend(trend_display)
         atm_trend_html = colorize_trend(atm_trend_display)
@@ -414,6 +416,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
+
 
 
 
