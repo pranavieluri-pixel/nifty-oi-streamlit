@@ -322,37 +322,31 @@ if flip_alerts:
             st.success(f"Flip email sent: {subject}")
         else:
             st.error(f"Failed sending flip email ({strike}): {err}")
-# ----------------- Periodic summary every 60 seconds (Option A) -----------------
+# ----------------- Periodic summary every 60 seconds (Final Plain Format) -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
 if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
     try:
-        df = display.copy()
+        # find max OI strikes
+        max_call_row = df_filtered.loc[df_filtered["CE_OI"].idxmax()]
+        max_put_row = df_filtered.loc[df_filtered["PE_OI"].idxmax()]
+        max_call_strike = int(max_call_row["strikePrice"])
+        max_put_strike = int(max_put_row["strikePrice"])
 
-        # --- Identify column names automatically ---
-        cols = [c.lower().strip() for c in df.columns]
-        put_col = next((c for c in df.columns if "put" in c.lower() and "oi" in c.lower()), None)
-        call_col = next((c for c in df.columns if "call" in c.lower() and "oi" in c.lower()), None)
-        strike_col = next((c for c in df.columns if "strike" in c.lower()), None)
+        # header line
+        header_line = (
+            f"{now.strftime('%Y-%m-%d %H:%M:%S')} | "
+            f"Spot: {safe_int(spot_price)} | "
+            f"PCR (all shown): {total_pcr:.2f} → {trend} | "
+            f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend} | "
+            f"{rocket_symbol} {rocket_text}"
+        )
 
-        if not put_col or not call_col or not strike_col:
-            raise ValueError(f"Required columns not found. Columns present: {df.columns.tolist()}")
-
-        # --- Get max OI strikes ---
-        max_put_strike = df.loc[df[put_col] == df[put_col].max(), strike_col].iloc[0]
-        max_call_strike = df.loc[df[call_col] == df[call_col].max(), strike_col].iloc[0]
-
-        # --- Compose summary header ---
-        summary_header = f"""
-        <div style="font-family:Arial; font-size:14px; line-height:1.5;">
-        <b>Summary:</b> {now.strftime('%Y-%m-%d %H:%M:%S')} |
-        <span style='color:#7B68EE;'>🟣 Max Call OI Strike:</span> <b>{max_call_strike}</b> |
-        <span style='color:#1E90FF;'>Spot:</span> <b>{spot_price}</b> |
-        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all_str}</b> |
-        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm_str}</b> |
-        <b>{pcr_signal}</b><br>
-        <span style='color:#32CD32;'>🟢 Max Put OI Strike:</span> <b>{max_put_strike}</b><br>
-        <hr style="border:0; border-top:1px solid #aaa;">
-        </div>
+        # plain header style (for email)
+        header_html = f"""
+        <b>Summary:</b><br>
+        {header_line}<br>
+        🟢 Max Put OI Strike: <b>{max_put_strike}</b><br>
+        -----------------------------------------------------------<br>
         """
 
         # --- Convert DataFrame to HTML table (preserve Streamlit-like display) ---
