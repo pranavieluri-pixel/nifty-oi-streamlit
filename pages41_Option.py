@@ -349,20 +349,40 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             except:
                 return x
 
-        # ---- Prepare header line ----
-        rocket_symbol = "🚀" if "Bullish" in trend or "Bearish" in trend else ""
-        rocket_text = (
-            "Strong Bullish" if "Bullish" in trend else
-            ("Strong Bearish" if "Bearish" in trend else "Neutral")
-        )
+        # ---- Prepare header line (exactly as shown in app, with colors) ----
+        trend_display = trend  # already contains emojis like 🟡⚠️ Bullish but Risky
+        atm_trend_display = atm_trend
+
+        # Choose rocket symbol only if very strong sentiment
+        rocket_symbol = "🚀" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
+
+        # Assign color based on trend text
+        def colorize_trend(text):
+            if "Bullish" in text:
+                if "Risky" in text:
+                    return f'<span style="color:#ffcc00;font-weight:bold;">{text}</span>'
+                elif "Strong" in text:
+                    return f'<span style="color:#00cc44;font-weight:bold;">{text}</span>'
+                else:
+                    return f'<span style="color:#33cc33;font-weight:bold;">{text}</span>'
+            elif "Bearish" in text:
+                if "Strong" in text:
+                    return f'<span style="color:#ff3333;font-weight:bold;">{text}</span>'
+                else:
+                    return f'<span style="color:#cc0000;font-weight:bold;">{text}</span>'
+            else:
+                return f'<span style="color:#999999;">{text}</span>'
+
+        trend_html = colorize_trend(trend_display)
+        atm_trend_html = colorize_trend(atm_trend_display)
 
         header_line = (
             f"{now.strftime('%Y-%m-%d %H:%M:%S')} | "
             f"🟣 Max Call OI Strike: {max_call_strike} | "
             f"Spot: {safe_int(spot_price)} | "
-            f"PCR (all shown): {total_pcr:.2f} → {trend} | "
-            f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend} | "
-            f"🔴{rocket_symbol} {rocket_text}<br>"
+            f"PCR (all shown): {total_pcr:.2f} → {trend_html} | "
+            f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend_html} | "
+            f"{rocket_symbol}<br>"
             f"🟢 Max Put OI Strike: {max_put_strike}<br>"
             f"-----------------------------------------------------------<br>"
         )
