@@ -322,53 +322,70 @@ if flip_alerts:
             st.success(f"Flip email sent: {subject}")
         else:
             st.error(f"Failed sending flip email ({strike}): {err}")
-# ----------------- Periodic summary every 60 seconds (Final Plain Format) -----------------
+
+
+
+# ----------------- Periodic summary every 60 seconds -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
+
 if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
     try:
-        # find max OI strikes
-        max_call_row = df_filtered.loc[df_filtered["CE_OI"].idxmax()]
-        max_put_row = df_filtered.loc[df_filtered["PE_OI"].idxmax()]
-        max_call_strike = int(max_call_row["strikePrice"])
-        max_put_strike = int(max_put_row["strikePrice"])
+        # ---- Compute Max PUT and CALL OI strikes ----
+        max_put_strike = (
+            display.loc[display["PE_OI"].idxmax(), "StrikeLabel"]
+            if "PE_OI" in display.columns and not display["PE_OI"].empty
+            else "N/A"
+        )
+        max_call_strike = (
+            display.loc[display["CE_OI"].idxmax(), "StrikeLabel"]
+            if "CE_OI" in display.columns and not display["CE_OI"].empty
+            else "N/A"
+        )
 
-        # header line
+        # ---- Helper for safe spot ----
+        def safe_int(x):
+            try:
+                return int(float(x))
+            except:
+                return x
+
+        # ---- Prepare header line ----
+        rocket_symbol = "🚀" if "Bullish" in trend or "Bearish" in trend else ""
+        rocket_text = (
+            "Strong Bullish" if "Bullish" in trend else
+            ("Strong Bearish" if "Bearish" in trend else "Neutral")
+        )
+
         header_line = (
             f"{now.strftime('%Y-%m-%d %H:%M:%S')} | "
+            f"🟣 Max Call OI Strike: {max_call_strike} | "
             f"Spot: {safe_int(spot_price)} | "
             f"PCR (all shown): {total_pcr:.2f} → {trend} | "
             f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend} | "
-            f"{rocket_symbol} {rocket_text}"
+            f"🔴{rocket_symbol} {rocket_text}<br>"
+            f"🟢 Max Put OI Strike: {max_put_strike}<br>"
+            f"-----------------------------------------------------------<br>"
         )
 
-        # plain header style (for email)
-        header_html = f"""
-        <b>Summary:</b><br>
-        {header_line}<br>
-        🟢 Max Put OI Strike: <b>{max_put_strike}</b><br>
-        -----------------------------------------------------------<br>
-        """
+        # ---- Convert DataFrame to HTML ----
+        html_table = display.to_html(index=False, escape=False)
+        full_html = f"<b>Summary:</b><br>{header_line}{html_table}"
 
-        # --- Convert DataFrame to HTML table (preserve Streamlit-like display) ---
-        html_table = df.to_html(index=False, escape=False, border=1)
-
-        # --- Combine header and table ---
-        html_content = f"{summary_header}{html_table}"
-
-        # --- Subject and plain fallback ---
-        subject = "CE–PE Summary Update"
+        # ---- Plain text fallback ----
         plain = (
-            f"CE–PE Summary Update ({now.strftime('%Y-%m-%d %H:%M:%S')})\n\n"
-            f"Max Call OI Strike: {max_call_strike}\n"
+            f"Summary: {now.strftime('%Y-%m-%d %H:%M:%S')} | "
+            f"Max Call OI Strike: {max_call_strike} | "
+            f"Spot: {safe_int(spot_price)} | "
+            f"PCR (all shown): {total_pcr:.2f} -> {trend} | "
+            f"PCR (ATM ±4): {atm_pcr:.2f} -> {atm_trend} | "
+            f"{rocket_symbol} {rocket_text}\n"
             f"Max Put OI Strike: {max_put_strike}\n"
-            f"Spot: {spot}\n"
-            f"PCR (all shown): {pcr_all}\n"
-            f"PCR (ATM ±4): {pcr_atm}\n"
-            f"Trend: {signal}\n\n"
-            f"See HTML version for full table."
+            f"{display.to_string(index=False)}"
         )
 
-        ok, err = send_email_html(subject, html_content, plain_text=plain, to_addr=ALERT_EMAIL)
+        subject = f"Summary({now.strftime('%Y-%m-%d %H:%M:%S')})"
+        ok, err = send_email_html(subject, full_html, plain_text=plain, to_addr=ALERT_EMAIL)
+
         if ok:
             st.success("Summary email sent.")
             st.session_state.last_summary_sent = now
@@ -377,6 +394,14 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
+
+
+
+
+
+
+
+
 
 
 
