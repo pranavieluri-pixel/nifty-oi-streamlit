@@ -322,7 +322,6 @@ if flip_alerts:
             st.success(f"Flip email sent: {subject}")
         else:
             st.error(f"Failed sending flip email ({strike}): {err}")
-
 # ----------------- Periodic summary every 60 seconds (Option A) -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
 if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
@@ -334,6 +333,12 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         put_col = "PE_OI"
         strike_col = "StrikeLabel"
 
+        # --- Handle missing variables safely ---
+        spot = spot_price if 'spot_price' in locals() else "N/A"
+        pcr_all = pcr_all_str if 'pcr_all_str' in locals() else "N/A"
+        pcr_atm = pcr_atm_str if 'pcr_atm_str' in locals() else "N/A"
+        signal = pcr_signal if 'pcr_signal' in locals() else "N/A"
+
         # --- Get max OI strikes safely ---
         max_put_strike = df.loc[df[put_col] == df[put_col].max(), strike_col].iloc[0]
         max_call_strike = df.loc[df[call_col] == df[call_col].max(), strike_col].iloc[0]
@@ -343,16 +348,16 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         <div style="font-family:Arial; font-size:14px; line-height:1.5;">
         <b>Summary:</b> {now.strftime('%Y-%m-%d %H:%M:%S')} |
         <span style='color:#7B68EE;'>🟣 Max Call OI Strike:</span> <b>{max_call_strike}</b> |
-        <span style='color:#1E90FF;'>Spot:</span> <b>{spot_price}</b> |
-        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all_str}</b> |
-        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm_str}</b> |
-        <b>{pcr_signal}</b><br>
+        <span style='color:#1E90FF;'>Spot:</span> <b>{spot}</b> |
+        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all}</b> |
+        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm}</b> |
+        <b>{signal}</b><br>
         <span style='color:#32CD32;'>🟢 Max Put OI Strike:</span> <b>{max_put_strike}</b><br>
         <hr style="border:0; border-top:1px solid #aaa;">
         </div>
         """
 
-        # --- Convert DataFrame to HTML table (like Streamlit display) ---
+        # --- Convert DataFrame to HTML table (preserve Streamlit-like display) ---
         html_table = df.to_html(index=False, escape=False, border=1)
 
         # --- Combine header and table ---
@@ -364,14 +369,13 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             f"CE–PE Summary Update ({now.strftime('%Y-%m-%d %H:%M:%S')})\n\n"
             f"Max Call OI Strike: {max_call_strike}\n"
             f"Max Put OI Strike: {max_put_strike}\n"
-            f"Spot: {spot_price}\n"
-            f"PCR (all shown): {pcr_all_str}\n"
-            f"PCR (ATM ±4): {pcr_atm_str}\n"
-            f"Trend: {pcr_signal}\n\n"
+            f"Spot: {spot}\n"
+            f"PCR (all shown): {pcr_all}\n"
+            f"PCR (ATM ±4): {pcr_atm}\n"
+            f"Trend: {signal}\n\n"
             f"See HTML version for full table."
         )
 
-        # --- Send email ---
         ok, err = send_email_html(subject, html_content, plain_text=plain, to_addr=ALERT_EMAIL)
         if ok:
             st.success("Summary email sent.")
@@ -381,6 +385,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
+
 
 
 
