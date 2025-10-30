@@ -323,22 +323,41 @@ if flip_alerts:
         else:
             st.error(f"Failed sending flip email ({strike}): {err}")
 
-# ----------------- Periodic summary every 60 seconds (Option A) -----------------
-SUMMARY_INTERVAL = timedelta(seconds=60)
-if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
-    # prepare HTML summary from display DataFrame
+# ==== EMAIL SUMMARY (EVERY 1 MINUTE) ====
+if now.second == 0:  # send summary every minute
     try:
-        html_table = display.to_html(index=False, escape=False)
-        subject = "CE–PE Summary Update"
-        plain = f"CE–PE Summary Update ({now.strftime('%Y-%m-%d %H:%M:%S')})\n\nSee HTML content for the table."
-        ok, err = send_email_html(subject, html_table, plain_text=plain, to_addr=ALERT_EMAIL)
-        if ok:
-            st.success("Summary email sent.")
-            st.session_state.last_summary_sent = now
-        else:
-            st.error(f"Failed to send summary email: {err}")
+        # ----- HEADER LINE -----
+        header_line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Spot: {spot} | PCR (all shown): {pcr_all:.2f} → {pcr_all_sentiment} | PCR (ATM ±4): {pcr_atm_range:.2f} → {pcr_range_sentiment} | {overall_sentiment_icon} {overall_sentiment_text}"
+
+        # ----- FIND MAX OI -----
+        max_put_oi_strike = oi_df.loc[oi_df['PUT OI'].idxmax(), 'Strike']
+        max_call_oi_strike = oi_df.loc[oi_df['CALL OI'].idxmax(), 'Strike']
+        max_oi_line = f"Max PUT OI: {max_put_oi_strike} | Max CALL OI: {max_call_oi_strike}"
+
+        # ----- TABLE BODY -----
+        table_text = oi_df.to_string(index=False)
+
+        # ----- COMPOSE BODY -----
+        email_body = f"{header_line}\n{max_oi_line}\n\n{table_text}"
+
+        # ----- EMAIL SUBJECT -----
+        subject = f"Option Summary @ {datetime.now().strftime('%H:%M:%S')}"
+
+        # ----- SEND MAIL -----
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = SMTP_USER
+        msg["To"] = SMTP_USER
+        msg.set_content(email_body)
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as smtp:
+            smtp.starttls()
+            smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.send_message(msg)
+        print("✅ Summary email sent.")
     except Exception as e:
-        st.error(f"Error preparing summary email: {e}")
+        print(f"⚠️ Summary email send failed: {e}")
+
 
 # ----------------- Rocket logic (unchanged) -----------------
 atm_ce_pct = int(atm_row.get("CE_pchgOI", 0))
