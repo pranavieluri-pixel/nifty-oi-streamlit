@@ -322,20 +322,26 @@ if flip_alerts:
             st.success(f"Flip email sent: {subject}")
         else:
             st.error(f"Failed sending flip email ({strike}): {err}")
-
 # ==== EMAIL SUMMARY (EVERY 1 MINUTE) ====
-if now.second == 0:  # send summary every minute
+SUMMARY_INTERVAL = timedelta(seconds=60)
+if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
     try:
         # ----- HEADER LINE -----
-        header_line = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Spot: {spot} | PCR (all shown): {pcr_all:.2f} → {pcr_all_sentiment} | PCR (ATM ±4): {pcr_atm_range:.2f} → {pcr_range_sentiment} | {overall_sentiment_icon} {overall_sentiment_text}"
+        header_line = (
+            f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | "
+            f"Spot: {int(spot_price)} | "
+            f"PCR (all shown): {total_pcr:.2f} → {trend} | "
+            f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend} | "
+            f"{rocket_symbol} {rocket_text}"
+        )
 
         # ----- FIND MAX OI -----
-        max_put_oi_strike = oi_df.loc[oi_df['PUT OI'].idxmax(), 'Strike']
-        max_call_oi_strike = oi_df.loc[oi_df['CALL OI'].idxmax(), 'Strike']
+        max_put_oi_strike = display.loc[display['PE_OI'].idxmax(), 'StrikeLabel']
+        max_call_oi_strike = display.loc[display['CE_OI'].idxmax(), 'StrikeLabel']
         max_oi_line = f"Max PUT OI: {max_put_oi_strike} | Max CALL OI: {max_call_oi_strike}"
 
         # ----- TABLE BODY -----
-        table_text = oi_df.to_string(index=False)
+        table_text = display.to_string(index=False)
 
         # ----- COMPOSE BODY -----
         email_body = f"{header_line}\n{max_oi_line}\n\n{table_text}"
@@ -354,53 +360,9 @@ if now.second == 0:  # send summary every minute
             smtp.starttls()
             smtp.login(SMTP_USER, SMTP_PASS)
             smtp.send_message(msg)
+
         print("✅ Summary email sent.")
+        st.session_state.last_summary_sent = now
+
     except Exception as e:
         print(f"⚠️ Summary email send failed: {e}")
-
-
-# ----------------- Rocket logic (unchanged) -----------------
-atm_ce_pct = int(atm_row.get("CE_pchgOI", 0))
-atm_pe_pct = int(atm_row.get("PE_pchgOI", 0))
-rocket_symbol = "⚪"
-rocket_text = "Neutral"
-if (total_pcr > 1) and (atm_pe_oi > atm_ce_oi) and (atm_pe_pct > 0):
-    rocket_symbol = "🟢🚀"; rocket_text = "Strong Bullish"
-elif (total_pcr < 1) and (atm_ce_oi > atm_pe_oi) and (atm_ce_pct > 0):
-    rocket_symbol = "🔴🚀"; rocket_text = "Strong Bearish"
-else:
-    if (total_pcr > 1 and atm_pe_oi > atm_ce_oi) or (atm_pe_pct > 0 and atm_pe_oi > atm_ce_oi):
-        rocket_symbol = "🟡⚠️"; rocket_text = "Bullish but Risky"
-    elif (total_pcr < 1 and atm_ce_oi > atm_pe_oi) or (atm_ce_pct > 0 and atm_ce_oi > atm_pe_oi):
-        rocket_symbol = "🟡⚠️"; rocket_text = "Bearish but Risky"
-    else:
-        rocket_symbol = "🤔"; rocket_text = "Conflict / Wait"
-
-# ----------------- Display -----------------
-st.markdown("---")
-pcr_display = (f"{total_pcr:.2f}" if total_pcr != float("inf") else "∞")
-atm_pcr_display = (f"{atm_pcr:.2f}" if atm_pcr != float("inf") else "∞")
-st.markdown(
-    f"**Live Snapshot:** {now.strftime('%Y-%m-%d %H:%M:%S')} | "
-    f"Spot: {safe_int(spot_price)} | "
-    f"PCR (all shown): {pcr_display} → {trend} | "
-    f"PCR (ATM ±4): {atm_pcr_display} → {atm_trend} | {rocket_symbol} {rocket_text}"
-)
-
-st.write("### 🔍 ATM ±5 Strike Option Chain (ascending strikes)")
-# colorize Flip column visually (simple):
-def highlight_flip(row):
-    f = row.get("Flip", "")
-    if f == "✅":
-        return ["background-color: #b6ffb6"] * len(row)
-    if f == "🔴":
-        return ["background-color: #ffb6b6"] * len(row)
-    return [""] * len(row)
-
-# show styled table
-try:
-    styled = display.style.apply(highlight_flip, axis=1)
-    st.dataframe(styled, use_container_width=True, hide_index=True)
-except Exception:
-    # fallback if styling fails in some environments
-    st.dataframe(display, use_container_width=True, hide_index=True)
