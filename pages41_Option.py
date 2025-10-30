@@ -324,7 +324,6 @@ if flip_alerts:
             st.error(f"Failed sending flip email ({strike}): {err}")
 
 
-
 # ----------------- Periodic summary every 60 seconds -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
 
@@ -342,7 +341,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             else "N/A"
         )
 
-        # ---- Helper for safe spot ----
+        # ---- Helper for safe conversion ----
         def safe_int(x):
             try:
                 return int(float(x))
@@ -350,7 +349,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
                 return x
 
         # ---- Prepare header line (exactly as shown in app, with colors) ----
-        trend_display = trend  # already contains emojis like 🟡⚠️ Bullish but Risky
+        trend_display = trend  # e.g. 🟡⚠️ Bullish but Risky
         atm_trend_display = atm_trend
 
         # Choose rocket symbol only if very strong sentiment
@@ -376,14 +375,15 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         trend_html = colorize_trend(trend_display)
         atm_trend_html = colorize_trend(atm_trend_display)
 
+        # ---- Build final header HTML ----
         header_line = (
             f"{now.strftime('%Y-%m-%d %H:%M:%S')} | "
-            f"🟣 Max Call OI Strike: {max_call_strike} | "
-            f"Spot: {safe_int(spot_price)} | "
-            f"PCR (all shown): {total_pcr:.2f} → {trend_html} | "
-            f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend_html} | "
+            f"<b>🟣 Max Call OI Strike:</b> <span style='color:#6a0dad;font-weight:bold;'>{max_call_strike}</span> | "
+            f"<b>Spot:</b> {safe_int(spot_price)} | "
+            f"<b>PCR (all shown):</b> {total_pcr:.2f} → {trend_html} | "
+            f"<b>PCR (ATM ±4):</b> {atm_pcr:.2f} → {atm_trend_html} | "
             f"{rocket_symbol}<br>"
-            f"🟢 Max Put OI Strike: {max_put_strike}<br>"
+            f"<b>🟢 Max Put OI Strike:</b> <span style='color:#009933;font-weight:bold;'>{max_put_strike}</span><br>"
             f"-----------------------------------------------------------<br>"
         )
 
@@ -396,14 +396,14 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             f"Summary: {now.strftime('%Y-%m-%d %H:%M:%S')} | "
             f"Max Call OI Strike: {max_call_strike} | "
             f"Spot: {safe_int(spot_price)} | "
-            f"PCR (all shown): {total_pcr:.2f} -> {trend} | "
-            f"PCR (ATM ±4): {atm_pcr:.2f} -> {atm_trend} | "
-            f"{rocket_symbol} {rocket_text}\n"
+            f"PCR (all shown): {total_pcr:.2f} -> {trend_display} | "
+            f"PCR (ATM ±4): {atm_pcr:.2f} -> {atm_trend_display} | "
+            f"{rocket_symbol}\n"
             f"Max Put OI Strike: {max_put_strike}\n"
             f"{display.to_string(index=False)}"
         )
 
-        subject = f"Summary({now.strftime('%Y-%m-%d %H:%M:%S')})"
+        subject = f"CE–PE Summary Update ({now.strftime('%Y-%m-%d %H:%M:%S')})"
         ok, err = send_email_html(subject, full_html, plain_text=plain, to_addr=ALERT_EMAIL)
 
         if ok:
@@ -414,9 +414,6 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
-
-
-
 
 
 
