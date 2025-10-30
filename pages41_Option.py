@@ -329,16 +329,12 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
     try:
         df = display.copy()
 
-        # --- Identify column names automatically ---
-        cols = [c.lower().strip() for c in df.columns]
-        put_col = next((c for c in df.columns if "put" in c.lower() and "oi" in c.lower()), None)
-        call_col = next((c for c in df.columns if "call" in c.lower() and "oi" in c.lower()), None)
-        strike_col = next((c for c in df.columns if "strike" in c.lower()), None)
+        # --- Column mappings based on your table ---
+        call_col = "CE_OI"
+        put_col = "PE_OI"
+        strike_col = "StrikeLabel"
 
-        if not put_col or not call_col or not strike_col:
-            raise ValueError(f"Required columns not found. Columns present: {df.columns.tolist()}")
-
-        # --- Get max OI strikes ---
+        # --- Get max OI strikes safely ---
         max_put_strike = df.loc[df[put_col] == df[put_col].max(), strike_col].iloc[0]
         max_call_strike = df.loc[df[call_col] == df[call_col].max(), strike_col].iloc[0]
 
@@ -356,7 +352,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         </div>
         """
 
-        # --- Convert display DataFrame to HTML table ---
+        # --- Convert DataFrame to HTML table (like Streamlit display) ---
         html_table = df.to_html(index=False, escape=False, border=1)
 
         # --- Combine header and table ---
@@ -375,6 +371,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             f"See HTML version for full table."
         )
 
+        # --- Send email ---
         ok, err = send_email_html(subject, html_content, plain_text=plain, to_addr=ALERT_EMAIL)
         if ok:
             st.success("Summary email sent.")
@@ -384,6 +381,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
+
 
 
 # ----------------- Rocket logic (unchanged) -----------------
