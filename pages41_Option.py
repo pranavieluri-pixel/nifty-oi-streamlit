@@ -325,64 +325,58 @@ if flip_alerts:
 
 # ----------------- Periodic summary every 60 seconds (Option A) -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
-
-# compute a simple rocket sentiment for header
-if "Bearish" in trend and "Bearish" in atm_trend:
-    rocket_symbol = "🔴🚀"
-    rocket_text = "Strong Bearish"
-elif "Bullish" in trend and "Bullish" in atm_trend:
-    rocket_symbol = "🟢🚀"
-    rocket_text = "Strong Bullish"
-else:
-    rocket_symbol = "⚪"
-    rocket_text = "Neutral / Mixed"
-
 if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
     try:
-        # ----- HEADER LINE -----
-        header_line = (
-            f"{now.strftime('%Y-%m-%d %H:%M:%S')} | "
-            f"Spot: {int(spot_price)} | "
-            f"PCR (all shown): {total_pcr:.2f} → {trend} | "
-            f"PCR (ATM ±4): {atm_pcr:.2f} → {atm_trend} | "
-            f"{rocket_symbol} {rocket_text}"
+        # --- Calculate summary header values ---
+        max_put_strike = display.loc[display["Put OI"] == display["Put OI"].max(), "Strike"].iloc[0]
+        max_call_strike = display.loc[display["Call OI"] == display["Call OI"].max(), "Strike"].iloc[0]
+        spot = spot_price
+        pcr_all = pcr_all_str
+        pcr_atm = pcr_atm_str
+        summary_trend = pcr_signal  # Example: 🔴🚀 Strong Bearish
+
+        # --- Prepare color-coded HTML header ---
+        summary_header = f"""
+        <div style="font-family:Arial; font-size:14px; line-height:1.5;">
+        <b>Summary:</b> {now.strftime('%Y-%m-%d %H:%M:%S')} |
+        <span style='color:#7B68EE;'>🟣 Max Call OI Strike:</span> <b>{max_call_strike}</b> |
+        <span style='color:#1E90FF;'>Spot:</span> <b>{spot}</b> |
+        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all}</b> |
+        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm}</b> |
+        <b>{summary_trend}</b><br>
+        <span style='color:#32CD32;'>🟢 Max Put OI Strike:</span> <b>{max_put_strike}</b><br>
+        <hr style="border:0; border-top:1px solid #aaa;">
+        </div>
+        """
+
+        # --- Convert display DataFrame to HTML table ---
+        html_table = display.to_html(index=False, escape=False, border=1)
+
+        # --- Combine header and table ---
+        html_content = f"{summary_header}{html_table}"
+
+        # --- Subject and plain fallback ---
+        subject = "CE–PE Summary Update"
+        plain = (
+            f"CE–PE Summary Update ({now.strftime('%Y-%m-%d %H:%M:%S')})\n\n"
+            f"Max Call OI Strike: {max_call_strike}\n"
+            f"Max Put OI Strike: {max_put_strike}\n"
+            f"Spot: {spot}\n"
+            f"PCR (all shown): {pcr_all}\n"
+            f"PCR (ATM ±4): {pcr_atm}\n"
+            f"Trend: {summary_trend}\n\n"
+            f"See HTML version for full table."
         )
 
-        # ----- FIND MAX OI -----
-        if not display.empty:
-            max_put_oi_strike = display.loc[display['PE_OI'].idxmax(), 'StrikeLabel']
-            max_call_oi_strike = display.loc[display['CE_OI'].idxmax(), 'StrikeLabel']
-        else:
-            max_put_oi_strike = "N/A"
-            max_call_oi_strike = "N/A"
-        max_oi_line = f"Max PUT OI: {max_put_oi_strike} | Max CALL OI: {max_call_oi_strike}"
-
-        # ----- TABLE -----
-        table_text = display.to_string(index=False)
-
-        # ----- COMPOSE FULL BODY -----
-        email_body = (
-            f"{header_line}\n"
-            f"{max_oi_line}\n"
-            f"{'-'*110}\n"
-            f"{table_text}\n"
-            f"{'-'*110}\n"
-            f"Auto-sent by Option Tracker"
-        )
-
-        # ----- EMAIL SUBJECT -----
-        subject = f"{symbol} Option Summary ({now.strftime('%Y-%m-%d %H:%M:%S')})"
-
-        # ----- SEND EMAIL -----
-        ok, err = send_email_simple(subject, email_body, to_addr=ALERT_EMAIL)
+        ok, err = send_email_html(subject, html_content, plain_text=plain, to_addr=ALERT_EMAIL)
         if ok:
-            st.success("✅ Summary email sent.")
+            st.success("Summary email sent.")
             st.session_state.last_summary_sent = now
         else:
-            st.error(f"❌ Failed to send summary email: {err}")
+            st.error(f"Failed to send summary email: {err}")
 
     except Exception as e:
-        st.error(f"Error preparing/sending summary email: {e}")
+        st.error(f"Error preparing summary email: {e}")
 
 
 # ----------------- Rocket logic (unchanged) -----------------
