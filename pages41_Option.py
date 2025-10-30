@@ -327,30 +327,37 @@ if flip_alerts:
 SUMMARY_INTERVAL = timedelta(seconds=60)
 if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
     try:
-        # --- Calculate summary header values ---
-        max_put_strike = display.loc[display["Put OI"] == display["Put OI"].max(), "Strike"].iloc[0]
-        max_call_strike = display.loc[display["Call OI"] == display["Call OI"].max(), "Strike"].iloc[0]
-        spot = spot_price
-        pcr_all = pcr_all_str
-        pcr_atm = pcr_atm_str
-        summary_trend = pcr_signal  # Example: 🔴🚀 Strong Bearish
+        df = display.copy()
 
-        # --- Prepare color-coded HTML header ---
+        # --- Identify column names automatically ---
+        cols = [c.lower().strip() for c in df.columns]
+        put_col = next((c for c in df.columns if "put" in c.lower() and "oi" in c.lower()), None)
+        call_col = next((c for c in df.columns if "call" in c.lower() and "oi" in c.lower()), None)
+        strike_col = next((c for c in df.columns if "strike" in c.lower()), None)
+
+        if not put_col or not call_col or not strike_col:
+            raise ValueError(f"Required columns not found. Columns present: {df.columns.tolist()}")
+
+        # --- Get max OI strikes ---
+        max_put_strike = df.loc[df[put_col] == df[put_col].max(), strike_col].iloc[0]
+        max_call_strike = df.loc[df[call_col] == df[call_col].max(), strike_col].iloc[0]
+
+        # --- Compose summary header ---
         summary_header = f"""
         <div style="font-family:Arial; font-size:14px; line-height:1.5;">
         <b>Summary:</b> {now.strftime('%Y-%m-%d %H:%M:%S')} |
         <span style='color:#7B68EE;'>🟣 Max Call OI Strike:</span> <b>{max_call_strike}</b> |
-        <span style='color:#1E90FF;'>Spot:</span> <b>{spot}</b> |
-        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all}</b> |
-        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm}</b> |
-        <b>{summary_trend}</b><br>
+        <span style='color:#1E90FF;'>Spot:</span> <b>{spot_price}</b> |
+        <span style='color:#000;'>PCR (all shown):</span> <b>{pcr_all_str}</b> |
+        <span style='color:#000;'>PCR (ATM ±4):</span> <b>{pcr_atm_str}</b> |
+        <b>{pcr_signal}</b><br>
         <span style='color:#32CD32;'>🟢 Max Put OI Strike:</span> <b>{max_put_strike}</b><br>
         <hr style="border:0; border-top:1px solid #aaa;">
         </div>
         """
 
         # --- Convert display DataFrame to HTML table ---
-        html_table = display.to_html(index=False, escape=False, border=1)
+        html_table = df.to_html(index=False, escape=False, border=1)
 
         # --- Combine header and table ---
         html_content = f"{summary_header}{html_table}"
@@ -361,10 +368,10 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             f"CE–PE Summary Update ({now.strftime('%Y-%m-%d %H:%M:%S')})\n\n"
             f"Max Call OI Strike: {max_call_strike}\n"
             f"Max Put OI Strike: {max_put_strike}\n"
-            f"Spot: {spot}\n"
-            f"PCR (all shown): {pcr_all}\n"
-            f"PCR (ATM ±4): {pcr_atm}\n"
-            f"Trend: {summary_trend}\n\n"
+            f"Spot: {spot_price}\n"
+            f"PCR (all shown): {pcr_all_str}\n"
+            f"PCR (ATM ±4): {pcr_atm_str}\n"
+            f"Trend: {pcr_signal}\n\n"
             f"See HTML version for full table."
         )
 
