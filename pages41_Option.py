@@ -323,6 +323,15 @@ if flip_alerts:
         else:
             st.error(f"Failed sending flip email ({strike}): {err}")
 
+
+
+
+
+
+
+
+
+
 # ----------------- Periodic summary every 60 seconds -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
 
@@ -347,50 +356,50 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             except:
                 return x
 
-        # ---- Prepare header line (exactly as shown in app, with colors) ----
+        # ---- Display strings ----
         trend_display = trend        # e.g. 🟡⚠️ Bullish but Risky
         atm_trend_display = atm_trend
 
-        # Choose rocket symbol if very strong sentiment
+        # ---- Rocket emoji logic ----
         rocket_symbol = "🚀" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
 
-        # ---- Better color function that works with emojis too ----
-        def colorize_trend(text):
+        # ---- Trend color mapping (email-safe) ----
+        def colorize_trend_html(text):
+            color = "#999999"
             if "Bullish" in text:
                 if "Risky" in text:
-                    return f"<span style='color:#ffcc00;font-weight:bold;'>{text}</span>"
+                    color = "#ffcc00"  # Yellow
                 elif "Strong" in text:
-                    return f"<span style='color:#00cc44;font-weight:bold;'>{text}</span>"
+                    color = "#00cc44"  # Bright green
                 else:
-                    return f"<span style='color:#33cc33;font-weight:bold;'>{text}</span>"
+                    color = "#33cc33"  # Normal green
             elif "Bearish" in text:
                 if "Strong" in text:
-                    return f"<span style='color:#ff3333;font-weight:bold;'>{text}</span>"
+                    color = "#ff3333"  # Bright red
                 else:
-                    return f"<span style='color:#cc0000;font-weight:bold;'>{text}</span>"
-            elif "Neutral" in text:
-                return f"<span style='color:#999999;'>{text}</span>"
-            else:
-                return text  # fallback (keeps emoji intact)
+                    color = "#cc0000"  # Red
+            return f"<font color='{color}'><b>{text}</b></font>"
 
-        trend_html = colorize_trend(trend_display)
-        atm_trend_html = colorize_trend(atm_trend_display)
+        trend_html = colorize_trend_html(trend_display)
+        atm_trend_html = colorize_trend_html(atm_trend_display)
 
-        # ---- Build final header HTML ----
-        header_line = (
-            f"{now.strftime('%Y-%m-%d %H:%M:%S')} | "
-            f"<b>🟣 Max Call OI Strike:</b> <span style='color:#6a0dad;font-weight:bold;'>{max_call_strike}</span> | "
-            f"<b>Spot:</b> {safe_int(spot_price)} | "
-            f"<b>PCR (all shown):</b> {total_pcr:.2f} → {trend_html} | "
-            f"<b>PCR (ATM ±4):</b> {atm_pcr:.2f} → {atm_trend_html} | "
-            f"{rocket_symbol}<br>"
-            f"<b>🟢 Max Put OI Strike:</b> <span style='color:#009933;font-weight:bold;'>{max_put_strike}</span><br>"
-            f"-----------------------------------------------------------<br>"
-        )
+        # ---- Build header HTML ----
+        header_html = f"""
+        <div style="font-family: Arial; font-size: 14px;">
+        <b>Summary:</b><br>
+        {now.strftime('%Y-%m-%d %H:%M:%S')} | 
+        <b>🟣 Max Call OI Strike:</b> <font color='#6a0dad'><b>{max_call_strike}</b></font> | 
+        <b>Spot:</b> {safe_int(spot_price)} | 
+        <b>PCR (all shown):</b> {total_pcr:.2f} → {trend_html} | 
+        <b>PCR (ATM ±4):</b> {atm_pcr:.2f} → {atm_trend_html} | {rocket_symbol}<br>
+        <b>🟢 Max Put OI Strike:</b> <font color='#009933'><b>{max_put_strike}</b></font><br>
+        -----------------------------------------------------------<br>
+        </div>
+        """
 
         # ---- Convert DataFrame to HTML ----
         html_table = display.to_html(index=False, escape=False)
-        full_html = f"<b>Summary:</b><br>{header_line}{html_table}"
+        full_html = header_html + html_table
 
         # ---- Plain text fallback ----
         plain = (
@@ -398,12 +407,12 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             f"Max Call OI Strike: {max_call_strike} | "
             f"Spot: {safe_int(spot_price)} | "
             f"PCR (all shown): {total_pcr:.2f} -> {trend_display} | "
-            f"PCR (ATM ±4): {atm_pcr:.2f} -> {atm_trend_display} | "
-            f"{rocket_symbol}\n"
+            f"PCR (ATM ±4): {atm_pcr:.2f} -> {atm_trend_display} | {rocket_symbol}\n"
             f"Max Put OI Strike: {max_put_strike}\n"
             f"{display.to_string(index=False)}"
         )
 
+        # ---- Send the email ----
         subject = f"CE–PE Summary Update ({now.strftime('%Y-%m-%d %H:%M:%S')})"
         ok, err = send_email_html(subject, full_html, plain_text=plain, to_addr=ALERT_EMAIL)
 
@@ -415,10 +424,6 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
-
-
-
-
 
 
 
