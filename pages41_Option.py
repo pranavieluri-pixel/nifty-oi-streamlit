@@ -207,7 +207,7 @@ display = display.rename(columns={"CE_pchgOI": "CE_%OI", "PE_pchgOI": "PE_%OI"})
 
 # ------------------------
 # NEW: OI_Diff column (user requested)
-# OI_Diff = ((PE_OI * (PE_%OI / (100+PE_%OI ))) - (CE_OI * (CE_%OI/ (100+CE_%OI))))) /1000
+# OI_Diff = ((PE_OI * (PE_%OI / (100+PE_%OI ))) - ((CE_OI * (CE_%OI/ (100+CE_%OI))) ) /1000
 # placed as the first column, colored green if positive else red,
 # and has a sign-change latch + email alert (separate from CE_PE_Diff latch).
 # ------------------------
