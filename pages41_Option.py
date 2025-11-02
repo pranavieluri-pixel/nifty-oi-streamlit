@@ -204,9 +204,42 @@ display = df_filtered.copy()
 display["StrikeLabel"] = display["strikePrice"].apply(lambda s: f"[ATM] {int(s)}" if int(s) == atm_strike else f"{int(s)}")
 display["SPOT"] = safe_int(spot_price)
 display = display.rename(columns={"CE_pchgOI": "CE_%OI", "PE_pchgOI": "PE_%OI"})
-display = display[[
+
+# ------------------------
+# NEW: OI_Diff column (user requested)
+# OI_Diff = (PE_OI * (1 + PE_%OI/100) - CE_OI * (1 + CE_%OI/100)) / 100
+# placed as the first column, colored green if positive else red,
+# and has a sign-change latch + email alert (separate from CE_PE_Diff latch).
+# ------------------------
+# guard missing columns
+if "PE_OI" not in display.columns:
+    display["PE_OI"] = display.get("PE_OI", 0)
+if "CE_OI" not in display.columns:
+    display["CE_OI"] = display.get("CE_OI", 0)
+if "PE_%OI" not in display.columns:
+    display["PE_%OI"] = display.get("PE_%OI", 0)
+if "CE_%OI" not in display.columns:
+    display["CE_%OI"] = display.get("CE_%OI", 0)
+
+# compute as float then round to int for display (keeps parity with other int columns)
+display["OI_Diff"] = (
+    (display["PE_OI"] * (1 + display["PE_%OI"] / 100.0))
+    - (display["CE_OI"] * (1 + display["CE_%OI"] / 100.0))
+) / 100.0
+
+# reorder so OI_Diff is first, then the rest (keep original column ordering you used)
+ordered_cols = [
+    "OI_Diff",
     "CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","StrikeLabel","SPOT","PE_LTP","PE_Risk","PE_%OI","PE_OI"
-]]
+]
+# keep only columns that exist to avoid KeyError
+ordered_cols = [c for c in ordered_cols if c in display.columns]
+display = display[ordered_cols].copy()
+
+# Convert numeric display columns to int where appropriate (round OI_Diff first)
+if "OI_Diff" in display.columns:
+    # round to nearest integer for display consistency
+    display["OI_Diff"] = display["OI_Diff"].round().astype(int)
 
 for c in ["CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","SPOT","PE_LTP","PE_Risk","PE_%OI","PE_OI"]:
     if c in display.columns:
@@ -223,6 +256,15 @@ if "last_flip_time" not in st.session_state:
 
 if "last_summary_sent" not in st.session_state:
     st.session_state.last_summary_sent = datetime.min
+
+# NEW: state for OI_Diff sign latch & cooldown
+if "oi_last_sign" not in st.session_state:
+    # strikeLabel -> "Positive"/"Negative"/"Zero"
+    st.session_state.oi_last_sign = {}
+
+if "oi_last_oi_latch_time" not in st.session_state:
+    # strikeLabel -> datetime last sent
+    st.session_state.oi_last_oi_latch_time = {}
 
 # ----------------- LATCH-BASED Flip detection + visual latch persistence -----------------
 now = datetime.now()
@@ -247,7 +289,7 @@ def sign_of(x):
     else:
         return "Zero"
 
-# Iterate rows, detect latch flips
+# Iterate rows, detect latch flips (this is the existing CE_PE_Diff latch)
 for _, row in display.iterrows():
     strike_label = row["StrikeLabel"]
     # convert strike_label to plain numeric strike for logging/email
@@ -256,7 +298,7 @@ for _, row in display.iterrows():
     except Exception:
         strike_num = None
 
-    curr_risk = int(row["CE_PE_Diff"])
+    curr_risk = int(row["CE_PE_Diff"]) if "CE_PE_Diff" in row else 0
     curr_sign = sign_of(curr_risk)
     prev_sign = st.session_state.last_sign_state.get(str(strike_label))
 
@@ -337,6 +379,71 @@ if flip_alerts:
             st.success(f"Flip email sent: {subject}")
         else:
             st.error(f"Failed sending flip email ({strike_num}): {err}")
+
+# -----------------
+# NEW: OI_Diff sign-change detection + email alerts (per-strike)
+# mirror CE–PE latch behavior but maintain separate state keys
+# -----------------
+oi_flip_alerts = []
+oi_flip_symbols = []  # not used for display symbol (we color column), but kept for parity if needed
+
+for _, row in display.iterrows():
+    strike_label = row["StrikeLabel"]
+    try:
+        strike_num = int(str(strike_label).replace("[ATM]", "").strip())
+    except Exception:
+        strike_num = None
+
+    # if OI_Diff column is present, use it; else skip
+    if "OI_Diff" not in row:
+        continue
+
+    curr_oi = int(row["OI_Diff"])
+    curr_sign = sign_of(curr_oi)
+    prev_sign = st.session_state.oi_last_sign.get(str(strike_label))
+
+    if prev_sign and prev_sign != "Zero" and curr_sign != "Zero" and prev_sign != curr_sign:
+        # direction text
+        direction = "Bullish (PE dominant)" if curr_sign == "Positive" else "Bearish (CE dominant)"
+        # cooldown check
+        last_sent = st.session_state.oi_last_oi_latch_time.get(str(strike_label))
+        allow_send = True
+        COOLDOWN = timedelta(seconds=60)
+        if last_sent and (now - last_sent) < COOLDOWN:
+            allow_send = False
+
+        if allow_send:
+            # prepare email
+            subject = f"OI Diff Flip: {strike_num} → {direction}"
+            body_lines = [
+                f"Index: {symbol}",
+                f"Expiry: {selected_expiry}",
+                f"Strike: {strike_num}",
+                f"OI_Diff Flip: {prev_sign} -> {curr_sign}",
+                f"Prev OI_Diff (approx): {st.session_state.oi_last_sign.get(str(strike_label) + '_val', 0)}",
+                f"Curr OI_Diff: {curr_oi}",
+                "",
+                "Full row data:"
+            ]
+            try:
+                row_info = display.loc[display["StrikeLabel"].astype(str).str.contains(str(strike_num))].iloc[0].to_dict()
+            except Exception:
+                row_info = {}
+            for k, v in row_info.items():
+                body_lines.append(f"{k}: {v}")
+            body_text = "\n".join(body_lines)
+
+            ok, err = send_email_simple(subject, body_text, to_addr=ALERT_EMAIL)
+            if ok:
+                st.success(f"OI Diff email sent: {subject}")
+                st.session_state.oi_last_oi_latch_time[str(strike_label)] = now
+            else:
+                st.error(f"Failed sending OI Diff email ({strike_num}): {err}")
+
+    # update stored sign & store last numeric value too
+    st.session_state.oi_last_sign[str(strike_label)] = curr_sign
+    # store numeric near-by value keyed uniquely (store under strikeLabel + '_val' to avoid overwriting sign dict)
+    st.session_state.oi_last_sign[str(strike_label) + "_val"] = int(curr_oi)
 
 # ----------------- Periodic summary every 60 seconds -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
@@ -490,9 +597,21 @@ def latch_color(row):
             return ["background-color: #FEB2B2"] * len(row)  # 🔴 light red
     return [""] * len(row)
 
+# color function for OI_Diff (green if positive else red)
+def color_oi_diff(val):
+    try:
+        v = float(val)
+    except Exception:
+        return ""
+    color = "color: green; font-weight: 600" if v > 0 else "color: red; font-weight: 600"
+    return color
+
 # show styled table
 try:
+    # apply row latch color, then color only the OI_Diff column
     styled = display.style.apply(latch_color, axis=1)
+    if "OI_Diff" in display.columns:
+        styled = styled.applymap(color_oi_diff, subset=["OI_Diff"])
     st.dataframe(styled, use_container_width=True, hide_index=True)
 except Exception:
     # fallback if styling fails in some environments
