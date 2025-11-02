@@ -1,4 +1,3 @@
-# pages41_Option.py
 #!/usr/bin/env python3
 import requests
 import pandas as pd
@@ -225,90 +224,106 @@ if "last_flip_time" not in st.session_state:
 if "last_summary_sent" not in st.session_state:
     st.session_state.last_summary_sent = datetime.min
 
-# ----------------- Flip detection: compare current vs ~2 minutes earlier -----------------
+# ----------------- LATCH-BASED Flip detection + visual latch persistence -----------------
 now = datetime.now()
-FLIP_LOOKBACK = timedelta(seconds=120)  # 2 minutes
-PRUNE_OLDER_THAN = timedelta(minutes=5)  # keep short history
+
+# initialize latch storage if missing
+if "last_sign_state" not in st.session_state:
+    st.session_state.last_sign_state = {}  # strike -> "Positive"/"Negative"/"Zero"
+
+if "latched_strikes" not in st.session_state:
+    # strike_label -> {"state": "BULLISH"/"BEARISH", "time": "HH:MM:SS"}
+    st.session_state.latched_strikes = {}
 
 flip_alerts = []   # list of (strike, prev_sign, curr_sign, prev_risk, curr_risk)
 flip_symbols = []  # aligned with display rows
 
-# iterate rows and maintain per-strike time-series
+# Determine sign helper
+def sign_of(x):
+    if x > 0:
+        return "Positive"
+    elif x < 0:
+        return "Negative"
+    else:
+        return "Zero"
+
+# Iterate rows, detect latch flips
 for _, row in display.iterrows():
     strike_label = row["StrikeLabel"]
-    strike = int(strike_label.replace("[ATM]", "").strip())
+    # convert strike_label to plain numeric strike for logging/email
+    try:
+        strike_num = int(str(strike_label).replace("[ATM]", "").strip())
+    except Exception:
+        strike_num = None
+
     curr_risk = int(row["CE_PE_Diff"])
-    hist = st.session_state.flip_history.get(str(strike), [])  # list of dicts
-
-    # append current sample
-    hist.append({"time": now, "risk": curr_risk})
-    # prune old samples
-    hist = [h for h in hist if (now - h["time"]) <= PRUNE_OLDER_THAN]
-    st.session_state.flip_history[str(strike)] = hist
-
-    # find most recent sample older than or equal to lookback (i.e., ~2 minutes ago)
-    prev_candidates = [h for h in hist if h["time"] <= (now - FLIP_LOOKBACK)]
-    prev_entry = prev_candidates[-1] if prev_candidates else None
-
-    # determine signs
-    def sign_of(x):
-        if x > 0:
-            return "Positive"
-        elif x < 0:
-            return "Negative"
-        else:
-            return "Zero"
-
     curr_sign = sign_of(curr_risk)
-    prev_sign = sign_of(prev_entry["risk"]) if prev_entry else None
+    prev_sign = st.session_state.last_sign_state.get(str(strike_label))
 
-    # default symbol
+    # If sign changed between Positive <-> Negative => it's a flip (ignore Zero intermediate flips)
+    if prev_sign and prev_sign != "Zero" and curr_sign != "Zero" and prev_sign != curr_sign:
+        # map sign to direction per user: CE>PE => Bullish (Positive), CE<PE => Bearish (Negative)
+        curr_dir = "BULLISH" if curr_sign == "Positive" else "BEARISH"
+        prev_dir = "BULLISH" if prev_sign == "Positive" else "BEARISH"
+
+        # update latch storage to current direction and timestamp
+        st.session_state.latched_strikes[str(strike_label)] = {
+            "state": curr_dir,
+            "time": now.strftime("%H:%M:%S")
+        }
+
+        # prevent sending too many emails for same strike in short time
+        last_sent = st.session_state.last_flip_time.get(str(strike_label))
+        allow_send = True
+        COOLDOWN = timedelta(seconds=60)  # basic cooldown to avoid email spam
+        if last_sent and (now - last_sent) < COOLDOWN:
+            allow_send = False
+
+        # prepare flip alert
+        if allow_send:
+            flip_alerts.append((strike_num, prev_sign, curr_sign, prev_sign, curr_risk))
+            st.session_state.last_flip_time[str(strike_label)] = now
+
+    # always update last_sign_state (latch remembers last seen sign)
+    st.session_state.last_sign_state[str(strike_label)] = curr_sign
+
+    # determine display Flip symbol using latched state (persist until changed)
+    latched = st.session_state.latched_strikes.get(str(strike_label))
     symbol = "➖"
-
-    # flip detection only if prev_entry exists and prev_sign <-> curr_sign flip between Positive and Negative
-    if prev_entry and prev_sign and curr_sign and prev_sign != "Zero" and curr_sign != "Zero":
-        if (prev_sign == "Positive" and curr_sign == "Negative") or (prev_sign == "Negative" and curr_sign == "Positive"):
-            # avoid duplicate email for the same strike & direction within the last 2 minutes
-            last_sent = st.session_state.last_flip_time.get(str(strike))
-            allow_send = True
-            if last_sent and (now - last_sent) < FLIP_LOOKBACK:
-                allow_send = False
-
-            # register flip symbol and prepare alert
-            if curr_sign == "Positive":
-                symbol = "✅"  # Bearish -> Bullish
-            else:
-                symbol = "🔴"  # Bullish -> Bearish
-
-            if allow_send:
-                flip_alerts.append((strike, prev_sign, curr_sign, prev_entry["risk"], curr_risk))
-                # record last sent moment to prevent duplicate emails for same flip within lookback
-                st.session_state.last_flip_time[str(strike)] = now
-
+    if latched:
+        if latched["state"] == "BULLISH":
+            symbol = "✅"
+        elif latched["state"] == "BEARISH":
+            symbol = "🔴"
     flip_symbols.append(symbol)
 
-# attach Flip column
+# attach Flip column and reorder Flip right after StrikeLabel
 display["Flip"] = flip_symbols
-# reorder Flip right after StrikeLabel
 cols = display.columns.tolist()
 if "Flip" in cols and "StrikeLabel" in cols:
     strike_idx = cols.index("StrikeLabel")
     cols.insert(strike_idx + 1, cols.pop(cols.index("Flip")))
     display = display[cols]
 
+# Add latch time column
+display["Latch Time"] = display["StrikeLabel"].map(
+    lambda s: st.session_state.latched_strikes.get(s, {}).get("time", "")
+)
+
 # ----------------- Send flip emails (one per detected flip) -----------------
 if flip_alerts:
-    for strike, prev_sign, curr_sign, prev_risk, curr_risk in flip_alerts:
+    for strike_num, prev_sign, curr_sign, prev_risk, curr_risk in flip_alerts:
         direction = "Bullish" if curr_sign == "Positive" else "Bearish"
-        subject = f"CE–PE Risk Flip: {strike} → {direction}"
+        subject = f"CE–PE Risk Flip: {strike_num} → {direction}"
         # prepare a concise plain-text body (plus include the row info)
-        row_info = display.loc[display["StrikeLabel"].str.contains(str(strike))].iloc[0].to_dict()
+        # find corresponding display row
+        row_info = display.loc[display["StrikeLabel"].str.contains(str(strike_num))].iloc[0].to_dict()
         body_lines = [
             f"Index: {symbol}",
             f"Expiry: {selected_expiry}",
-            f"Strike: {strike}",
+            f"Strike: {strike_num}",
             f"Flip: {prev_sign} -> {curr_sign}",
-            f"Prev Risk (2+ min ago): {prev_risk}",
+            f"Prev Risk (approx): {prev_risk}",
             f"Curr Risk: {curr_risk}",
             "",
             "Full row data:",
@@ -321,16 +336,7 @@ if flip_alerts:
         if ok:
             st.success(f"Flip email sent: {subject}")
         else:
-            st.error(f"Failed sending flip email ({strike}): {err}")
-
-
-
-
-
-
-
-
-
+            st.error(f"Failed sending flip email ({strike_num}): {err}")
 
 # ----------------- Periodic summary every 60 seconds -----------------
 SUMMARY_INTERVAL = timedelta(seconds=60)
@@ -349,15 +355,8 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             else "N/A"
         )
 
-        # ---- Helper for safe conversion ----
-        def safe_int(x):
-            try:
-                return int(float(x))
-            except:
-                return x
-
         # ---- Display strings ----
-        trend_display = trend        # e.g. 🟡⚠️ Bullish but Risky
+        trend_display = trend
         atm_trend_display = atm_trend
 
         # ---- Rocket emoji logic ----
@@ -397,8 +396,33 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         </div>
         """
 
-        # ---- Convert DataFrame to HTML ----
-        html_table = display.to_html(index=False, escape=False)
+        # ---- Build HTML table with row-level latched highlighting ----
+        cols_for_table = display.columns.tolist()
+        # start table
+        html_table = "<table border='1' cellpadding='4' cellspacing='0' style='border-collapse: collapse; font-family: Arial; font-size:12px;'>"
+        # header row
+        html_table += "<thead><tr>"
+        for col in cols_for_table:
+            html_table += f"<th style='background:#efefef'>{col}</th>"
+        html_table += "</tr></thead><tbody>"
+        # rows
+        for _, r in display.iterrows():
+            strike_label = r["StrikeLabel"]
+            latched = st.session_state.latched_strikes.get(str(strike_label))
+            row_bg = ""
+            if latched:
+                if latched["state"] == "BULLISH":
+                    row_bg = "background-color:#C6F6D5"  # light green
+                elif latched["state"] == "BEARISH":
+                    row_bg = "background-color:#FEB2B2"  # light red
+
+            html_table += f"<tr style='{row_bg}'>"
+            for col in cols_for_table:
+                cell = r[col]
+                html_table += f"<td>{cell}</td>"
+            html_table += "</tr>"
+        html_table += "</tbody></table>"
+
         full_html = header_html + html_table
 
         # ---- Plain text fallback ----
@@ -424,10 +448,6 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
 
     except Exception as e:
         st.error(f"Error preparing summary email: {e}")
-
-
-
-
 
 # ----------------- Rocket logic (unchanged) -----------------
 atm_ce_pct = int(atm_row.get("CE_pchgOI", 0))
@@ -458,19 +478,30 @@ st.markdown(
 )
 
 st.write("### 🔍 ATM ±5 Strike Option Chain (ascending strikes)")
-# colorize Flip column visually (simple):
-def highlight_flip(row):
-    f = row.get("Flip", "")
-    if f == "✅":
-        return ["background-color: #b6ffb6"] * len(row)
-    if f == "🔴":
-        return ["background-color: #ffb6b6"] * len(row)
+
+# ----------------- Visual highlight function (uses latched_strikes) -----------------
+def latch_color(row):
+    strike_label = row.get("StrikeLabel")
+    latched_info = st.session_state.latched_strikes.get(str(strike_label), None)
+    if latched_info:
+        if latched_info["state"] == "BULLISH":
+            return ["background-color: #C6F6D5"] * len(row)  # 🟢 light green
+        elif latched_info["state"] == "BEARISH":
+            return ["background-color: #FEB2B2"] * len(row)  # 🔴 light red
     return [""] * len(row)
 
 # show styled table
 try:
-    styled = display.style.apply(highlight_flip, axis=1)
+    styled = display.style.apply(latch_color, axis=1)
     st.dataframe(styled, use_container_width=True, hide_index=True)
 except Exception:
     # fallback if styling fails in some environments
     st.dataframe(display, use_container_width=True, hide_index=True)
+
+# Optional: Add manual reset button for latched strikes
+st.markdown("### 🔄 Latch Control")
+if st.button("Reset All Latched Strikes"):
+    st.session_state.latched_strikes.clear()
+    st.session_state.last_sign_state.clear()
+    st.success("All latched strikes reset successfully.")
+    st.experimental_rerun()
