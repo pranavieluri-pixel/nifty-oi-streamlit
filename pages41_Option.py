@@ -187,7 +187,7 @@ df_filtered["CE_PE_Diff"] = df_filtered["CE_Risk"] - df_filtered["PE_Risk"]
 total_pe_oi = int(df_filtered["PE_OI"].sum())
 total_ce_oi = int(df_filtered["CE_OI"].sum())
 total_pcr = (total_pe_oi / total_ce_oi) if total_ce_oi != 0 else float("inf")
-trend = "🟢 Bullish" if total_pcr > 1 else "🔴 Bearish"
+trend = "🟢 Bullish" if total_pcr > 0.85 else "🔴 Bearish"
 
 start_atm_idx = max(0, int(atm_idx_filtered) - 4)
 end_atm_idx = min(len(df_filtered) - 1, int(atm_idx_filtered) + 4)
@@ -195,7 +195,7 @@ df_atm_window = df_filtered.iloc[start_atm_idx:end_atm_idx+1]
 atm_pe_oi = int(df_atm_window["PE_OI"].sum())
 atm_ce_oi = int(df_atm_window["CE_OI"].sum())
 atm_pcr = (atm_pe_oi / atm_ce_oi) if atm_ce_oi != 0 else float("inf")
-atm_trend = "🟢 Bullish" if atm_pcr > 1 else "🔴 Bearish"
+atm_trend = "🟢 Bullish" if atm_pcr > 0.85 else "🔴 Bearish"
 
 atm_row = df_filtered.iloc[atm_idx_filtered]
 
@@ -207,7 +207,7 @@ display = display.rename(columns={"CE_pchgOI": "CE_%OI", "PE_pchgOI": "PE_%OI"})
 
 # ------------------------
 # NEW: OI_Diff column (user requested)
-# OI_Diff = (PE_OI * (1 + PE_%OI/100) - CE_OI * (1 + CE_%OI/100)) / 100
+# OI_Diff = ((PE_OI * (PE_%OI / (100+PE_%OI ))) - (CE_OI * (CE_%OI/ (100+CE_%OI))))) /1000
 # placed as the first column, colored green if positive else red,
 # and has a sign-change latch + email alert (separate from CE_PE_Diff latch).
 # ------------------------
@@ -223,9 +223,11 @@ if "CE_%OI" not in display.columns:
 
 # compute as float then round to int for display (keeps parity with other int columns)
 display["OI_Diff"] = (
-    (display["PE_OI"] * (1 + display["PE_%OI"] / 100.0))
-    - (display["CE_OI"] * (1 + display["CE_%OI"] / 100.0))
-) / 100.0
+    (
+        (display["PE_OI"] * (display["PE_%OI"] / (100 + display["PE_%OI"]))) -
+        (display["CE_OI"] * (display["CE_%OI"] / (100 + display["CE_%OI"])))
+    ) / 1000
+).round(0)
 
 # reorder so OI_Diff is first, then the rest (keep original column ordering you used)
 ordered_cols = [
