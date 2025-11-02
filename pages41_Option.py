@@ -231,8 +231,8 @@ display["OI_Diff"] = (
 
 # reorder so OI_Diff is first, then the rest (keep original column ordering you used)
 ordered_cols = [
-    "OI_Diff",
-    "CE_OI","CE_%OI","CE_Risk","CE_PE_Diff","CE_LTP","StrikeLabel","SPOT","PE_LTP","PE_Risk","PE_%OI","PE_OI"
+    "OI_Diff","CE_PE_Diff","StrikeLabel",
+    "CE_%OI","PE_%OI","CE_Risk","CE_LTP","SPOT","PE_LTP","CE_OI","PE_Risk","PE_OI"
 ]
 # keep only columns that exist to avoid KeyError
 ordered_cols = [c for c in ordered_cols if c in display.columns]
