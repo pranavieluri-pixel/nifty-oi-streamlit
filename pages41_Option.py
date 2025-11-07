@@ -14,9 +14,9 @@ import plotly.express as px
 # ============================================================
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = "your_email@gmail.com"
-SMTP_PASS = "your_password"
-SEND_TO = ["recipient@example.com"]
+SMTP_USER = "trim15081947@gmail.com"
+SMTP_PASS = "yvrpgfrzersyanvx"
+SEND_TO = "trim15081947@gmail.com"
 
 # ============================================================
 # = STREAMLIT PAGE CONFIG =
