@@ -739,6 +739,55 @@ try:
                         changed_fields.append((names[i], p, c))
                 changed_details.append((s_label, changed_fields))
 
+# ---- Compute Max PUT and CALL OI strikes ----
+        max_put_strike = (
+            display.loc[display["PE_OI"].idxmax(), "StrikeLabel"]
+            if "PE_OI" in display.columns and not display["PE_OI"].empty
+            else "N/A"
+        )
+        max_call_strike = (
+            display.loc[display["CE_OI"].idxmax(), "StrikeLabel"]
+            if "CE_OI" in display.columns and not display["CE_OI"].empty
+            else "N/A"
+        )
+
+        # ---- Include OI_Diff Summary ----
+        latest_oi_diff = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
+        oi_direction = "Bullish (PE > CE)" if latest_oi_diff > 0 else ("Bearish (CE > PE)" if latest_oi_diff < 0 else "Neutral")
+        oi_color = "#009933" if latest_oi_diff > 0 else ("#cc0000" if latest_oi_diff < 0 else "#666666")
+
+        # ---- Display strings ----
+        trend_display = trend
+        atm_trend_display = atm_trend
+
+        # ---- Rocket emoji logic ----
+        rocket_symbol = "🚀" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
+
+        # ---- Trend color mapping (email-safe) ----
+        def colorize_trend_html(text):
+            color = "#999999"
+            if "Bullish" in text:
+                if "Risky" in text:
+                    color = "#ffcc00"  # Yellow
+                elif "Strong" in text:
+                    color = "#00cc44"  # Bright green
+                else:
+                    color = "#33cc33"  # Normal green
+            elif "Bearish" in text:
+                if "Strong" in text:
+                    color = "#ff3333"  # Bright red
+                else:
+                    color = "#cc0000"  # Red
+            return f"<font color='{color}'><b>{text}</b></font>"
+
+        trend_html = colorize_trend_html(trend_display)
+        atm_trend_html = colorize_trend_html(atm_trend_display)
+
+       
+       
+
+
+
     # Update snapshot now (so we don't repeatedly detect same change) after possibly sending email
     if changed:
         # Build summary email similar to periodic
@@ -749,12 +798,18 @@ try:
             oi_color = "#009933" if latest_oi_diff > 0 else ("#cc0000" if latest_oi_diff < 0 else "#666666")
             trend_html = (f"<b>{trend}</b>")
             atm_trend_html = (f"<b>{atm_trend}</b>")
-
-            header_html = f"""
-            <div style="font-family: Arial; font-size: 14px;">
-            <b>Snapshot Update (change detected):</b><br>
-            {fmt_ist(now_send)} | Spot: {safe_int(spot_price)} | OI_Diff: <font color='{oi_color}'><b>{latest_oi_diff}</b></font> — {oi_direction}<br>
-            -----------------------------------------------------------<br>
+ # ---- Build header HTML ----
+             header_html = f"""
+        <div style="font-family: Arial; font-size: 14px;">
+        <b>Summary:</b><br>
+        {fmt_ist(now)} | 
+        <b>🟣 Max Call OI Strike:</b> <font color='#6a0dad'><b>{max_call_strike}</b></font> | 
+        <b>Spot:</b> {safe_int(spot_price)} | 
+        <b>PCR (all shown):</b> {total_pcr:.2f} → {trend_html} | 
+        <b>PCR (ATM ±4):</b> {atm_pcr:.2f} → {atm_trend_html} | {rocket_symbol}<br>
+        <b>OI_Diff:</b> <font color='{oi_color}'><b>{latest_oi_diff}</b></font> — {oi_direction}<br>
+        <b>🟢 Max Put OI Strike:</b> <font color='#009933'><b>{max_put_strike}</b></font><br>
+        -----------------------------------------------------------<br>
             </div>
             """
 
