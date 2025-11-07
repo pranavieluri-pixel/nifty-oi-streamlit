@@ -844,15 +844,17 @@ else:
     else:
         rocket_symbol = "🤔"; rocket_text = "Conflict / Wait"
 
-# ----------------- Display -----------------
+# ----------------- Display header (includes OI_Diff summary) -----------------
 st.markdown("---")
 pcr_display = (f"{total_pcr:.2f}" if total_pcr != float("inf") else "∞")
 atm_pcr_display = (f"{atm_pcr:.2f}" if atm_pcr != float("inf") else "∞")
+oi_sum = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
+oi_dir_summary = oi_direction_label(oi_sum)
+oi_badge = "🟢" if oi_sum > 0 else ("🔴" if oi_sum < 0 else "⚪")
 st.markdown(
-    f"**Live Snapshot:** {fmt_ist(now)} | "
-    f"Spot: {safe_int(spot_price)} | "
-    f"PCR (all shown): {pcr_display} → {trend} | "
-    f"PCR (ATM ±4): {atm_pcr_display} → {atm_trend} | {rocket_symbol} {rocket_text}"
+    f"**Live Snapshot:** {fmt_ist(now)} | Spot: {safe_int(spot_price)} | "
+    f"PCR (all shown): {pcr_display} → {trend} | PCR (ATM ±4): {atm_pcr_display} → {atm_trend} | "
+    f"{oi_badge} OI_Diff (sum): {oi_sum} — {oi_dir_summary}"
 )
 
 st.write("### 🔍 ATM ±5 Strike Option Chain (ascending strikes)")
