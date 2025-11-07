@@ -205,32 +205,6 @@ atm_pe_oi = int(df_atm_window["PE_OI"].sum())
 atm_ce_oi = int(df_atm_window["CE_OI"].sum())
 atm_pcr = (atm_pe_oi / atm_ce_oi) if atm_ce_oi != 0 else float("inf")
 atm_trend = "🟢 Bullish" if atm_pcr > 0.85 else "🔴 Bearish"
-# ----------------- Prepare display DataFrame & OI_Diff -----------------
-display = df_filtered.copy()
-display["StrikeLabel"] = display["strikePrice"].apply(lambda s: f"[ATM] {int(s)}" if int(s) == atm_strike else f"{int(s)}")
-display["SPOT"] = safe_int(spot_price)
-
-
-# compute OI_Diff (float and rounded)
-display["OI_Diff_Float"] = (
-    (
-        (display["PE_OI"] * (display["PE_%OI"] / (100 + display["PE_%OI"]))) -
-        (display["CE_OI"] * (display["CE_%OI"] / (100 + display["CE_%OI"])))
-    ) / 1000
-).round(2)
-display["OI_Diff"] = display["OI_Diff_Float"].round(0).astype(int)
-
-# directional label for OI_Diff
-def oi_direction_label(v):
-    if v > 0:
-        return "Bullish (PE > CE)"
-    elif v < 0:
-        return "Bearish (CE > PE)"
-    else:
-        return "Neutral"
-display["OI_Diff_Dir"] = display["OI_Diff"].apply(oi_direction_label)
-
-
 
 atm_row = df_filtered.iloc[atm_idx_filtered]
 
@@ -770,45 +744,16 @@ try:
         # Build summary email similar to periodic
         try:
             now_send = now_ist()
-                    # ---- Display strings ----
-        trend_display = trend
-        atm_trend_display = atm_trend
+            latest_oi_diff = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
+            oi_direction = "Bullish (PE > CE)" if latest_oi_diff > 0 else ("Bearish (CE > PE)" if latest_oi_diff < 0 else "Neutral")
+            oi_color = "#009933" if latest_oi_diff > 0 else ("#cc0000" if latest_oi_diff < 0 else "#666666")
+            trend_html = (f"<b>{trend}</b>")
+            atm_trend_html = (f"<b>{atm_trend}</b>")
 
-        # ---- Rocket emoji logic ----
-        rocket_symbol = "🚀" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
-
-        # ---- Trend color mapping (email-safe) ----
-        def colorize_trend_html(text):
-            color = "#999999"
-            if "Bullish" in text:
-                if "Risky" in text:
-                    color = "#ffcc00"  # Yellow
-                elif "Strong" in text:
-                    color = "#00cc44"  # Bright green
-                else:
-                    color = "#33cc33"  # Normal green
-            elif "Bearish" in text:
-                if "Strong" in text:
-                    color = "#ff3333"  # Bright red
-                else:
-                    color = "#cc0000"  # Red
-            return f"<font color='{color}'><b>{text}</b></font>"
-
-        trend_html = colorize_trend_html(trend_display)
-        atm_trend_html = colorize_trend_html(atm_trend_display)
-
-        # ---- Build header HTML ----
-        header_html = f"""
-        <div style="font-family: Arial; font-size: 14px;">
-        <b>Summary:</b><br>
-        {fmt_ist(now)} | 
-        <b>🟣 Max Call OI Strike:</b> <font color='#6a0dad'><b>{max_call_strike}</b></font> | 
-        <b>Spot:</b> {safe_int(spot_price)} | 
-        <b>PCR (all shown):</b> {total_pcr:.2f} → {trend_html} | 
-        <b>PCR (ATM ±4):</b> {atm_pcr:.2f} → {atm_trend_html} | {rocket_symbol}<br>
-        <b>OI_Diff:</b> <font color='{oi_color}'><b>{latest_oi_diff}</b></font> — {oi_direction}<br>
-        <b>🟢 Max Put OI Strike:</b> <font color='#009933'><b>{max_put_strike}</b></font><br>
-
+            header_html = f"""
+            <div style="font-family: Arial; font-size: 14px;">
+            <b>Snapshot Update (change detected):</b><br>
+            {fmt_ist(now_send)} | Spot: {safe_int(spot_price)} | OI_Diff: <font color='{oi_color}'><b>{latest_oi_diff}</b></font> — {oi_direction}<br>
             -----------------------------------------------------------<br>
             </div>
             """
@@ -839,16 +784,16 @@ try:
 
             plain = f"Snapshot update {fmt_ist(now_send)}\n{display.to_string(index=False)}"
 
-            subject = f"Update ({fmt_ist(now_send)})"
+            subject = f"Immediate Snapshot Update ({fmt_ist(now_send)})"
             ok, err = send_email_html(subject, full_html, plain_text=plain, to_addr=ALERT_EMAIL)
             if ok:
-                st.success("Immediate summary email sent (change detected).")
+                st.success("Immediate snapshot summary email sent (change detected).")
                 st.session_state.last_summary_sent = now
             else:
                 st.error(f"Failed to send immediate snapshot summary email: {err}")
 
         except Exception as ee:
-            st.error(f"Error when preparing immediate email: {ee}")
+            st.error(f"Error when preparing immediate snapshot email: {ee}")
 
     # store current snapshot into session_state (regardless of changed or not)
     st.session_state.last_snapshot = current_snapshot
@@ -873,17 +818,15 @@ else:
     else:
         rocket_symbol = "🤔"; rocket_text = "Conflict / Wait"
 
-# ----------------- Display header (includes OI_Diff summary) -----------------
+# ----------------- Display -----------------
 st.markdown("---")
 pcr_display = (f"{total_pcr:.2f}" if total_pcr != float("inf") else "∞")
 atm_pcr_display = (f"{atm_pcr:.2f}" if atm_pcr != float("inf") else "∞")
-oi_sum = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
-oi_dir_summary = oi_direction_label(oi_sum)
-oi_badge = "🟢" if oi_sum > 0 else ("🔴" if oi_sum < 0 else "⚪")
 st.markdown(
-    f"**Live Snapshot:** {fmt_ist(now)} | Spot: {safe_int(spot_price)} | "
-    f"PCR (all shown): {pcr_display} → {trend} | PCR (ATM ±4): {atm_pcr_display} → {atm_trend} | "
-    f"{oi_badge} OI_Diff (sum): {oi_sum} — {oi_dir_summary}"
+    f"**Live Snapshot:** {fmt_ist(now)} | "
+    f"Spot: {safe_int(spot_price)} | "
+    f"PCR (all shown): {pcr_display} → {trend} | "
+    f"PCR (ATM ±4): {atm_pcr_display} → {atm_trend} | {rocket_symbol} {rocket_text}"
 )
 
 st.write("### 🔍 ATM ±5 Strike Option Chain (ascending strikes)")
@@ -937,3 +880,4 @@ if st.button("Reset All Latched Strikes"):
     st.session_state.pe_last_sign.clear()
     st.success("All latched strikes reset successfully.")
     st.experimental_rerun()
+
