@@ -205,6 +205,32 @@ atm_pe_oi = int(df_atm_window["PE_OI"].sum())
 atm_ce_oi = int(df_atm_window["CE_OI"].sum())
 atm_pcr = (atm_pe_oi / atm_ce_oi) if atm_ce_oi != 0 else float("inf")
 atm_trend = "🟢 Bullish" if atm_pcr > 0.85 else "🔴 Bearish"
+# ----------------- Prepare display DataFrame & OI_Diff -----------------
+display = df_filtered.copy()
+display["StrikeLabel"] = display["strikePrice"].apply(lambda s: f"[ATM] {int(s)}" if int(s) == atm_strike else f"{int(s)}")
+display["SPOT"] = safe_int(spot_price)
+
+
+# compute OI_Diff (float and rounded)
+display["OI_Diff_Float"] = (
+    (
+        (display["PE_OI"] * (display["PE_%OI"] / (100 + display["PE_%OI"]))) -
+        (display["CE_OI"] * (display["CE_%OI"] / (100 + display["CE_%OI"])))
+    ) / 1000
+).round(2)
+display["OI_Diff"] = display["OI_Diff_Float"].round(0).astype(int)
+
+# directional label for OI_Diff
+def oi_direction_label(v):
+    if v > 0:
+        return "Bullish (PE > CE)"
+    elif v < 0:
+        return "Bearish (CE > PE)"
+    else:
+        return "Neutral"
+display["OI_Diff_Dir"] = display["OI_Diff"].apply(oi_direction_label)
+
+
 
 atm_row = df_filtered.iloc[atm_idx_filtered]
 
