@@ -19,7 +19,7 @@ SMTP_PASS = "yvrpgfrzersyanvx"
 ALERT_EMAIL = "trim15081947@gmail.com"
 # ===========================
 
-st.set_page_config(page_title="NIFTY & BANKNIFTY Option Chain — OI Tracker + Email Alerts", layout="wide")
+st.set_page_config(page_title="NIFTY & BANKNIFTY Option Chain â€” OI Tracker + Email Alerts", layout="wide")
 
 # ----------------- Auto-refresh (30 seconds) -----------------
 _ = st_autorefresh(interval=30000, limit=None, key="refresh_counter")  # 30s
@@ -99,11 +99,11 @@ def fmt_ist(dt: datetime):
     return dt.strftime("%d-%b-%Y %H:%M:%S") + " IST"
 
 # ----------------- UI -----------------
-st.title("📊 NIFTY / BANKNIFTY Option Chain — OI Tracker + Email Alerts (Flip + Summary)")
+st.title("ðŸ“Š NIFTY / BANKNIFTY Option Chain â€” OI Tracker + Email Alerts (Flip + Summary)")
 
 symbol = st.radio("Select Index", ["NIFTY", "BANKNIFTY"], horizontal=True)
 
-if st.button("♻️ Manual Refresh"):
+if st.button("â™»ï¸ Manual Refresh"):
     st.rerun()
 
 # ----------------- Fetch data -----------------
@@ -177,7 +177,7 @@ if df.empty:
     st.error("No strike data available.")
     st.stop()
 
-# ----------------- ATM-centric selection (±5 strikes) -----------------
+# ----------------- ATM-centric selection (Â±5 strikes) -----------------
 atm_idx_full = (df["strikePrice"] - spot_price).abs().idxmin()
 window_before = 5
 window_after = 5
@@ -196,7 +196,7 @@ df_filtered["CE_PE_Diff"] = df_filtered["CE_Risk"] - df_filtered["PE_Risk"]
 total_pe_oi = int(df_filtered["PE_OI"].sum())
 total_ce_oi = int(df_filtered["CE_OI"].sum())
 total_pcr = (total_pe_oi / total_ce_oi) if total_ce_oi != 0 else float("inf")
-trend = "🟢 Bullish" if total_pcr > 0.85 else "🔴 Bearish"
+trend = "ðŸŸ¢ Bullish" if total_pcr > 0.85 else "ðŸ”´ Bearish"
 
 start_atm_idx = max(0, int(atm_idx_filtered) - 4)
 end_atm_idx = min(len(df_filtered) - 1, int(atm_idx_filtered) + 4)
@@ -204,7 +204,7 @@ df_atm_window = df_filtered.iloc[start_atm_idx:end_atm_idx+1]
 atm_pe_oi = int(df_atm_window["PE_OI"].sum())
 atm_ce_oi = int(df_atm_window["CE_OI"].sum())
 atm_pcr = (atm_pe_oi / atm_ce_oi) if atm_ce_oi != 0 else float("inf")
-atm_trend = "🟢 Bullish" if atm_pcr > 0.85 else "🔴 Bearish"
+atm_trend = "ðŸŸ¢ Bullish" if atm_pcr > 0.85 else "ðŸ”´ Bearish"
 
 atm_row = df_filtered.iloc[atm_idx_filtered]
 
@@ -363,12 +363,12 @@ for _, row in display.iterrows():
 
     # determine display Flip symbol using latched state (persist until changed)
     latched = st.session_state.latched_strikes.get(str(strike_label))
-    symbol = "➖"
+    symbol = "âž–"
     if latched:
         if latched["state"] == "BULLISH":
-            symbol = "✅"
+            symbol = "âœ…"
         elif latched["state"] == "BEARISH":
-            symbol = "🔴"
+            symbol = "ðŸ”´"
     flip_symbols.append(symbol)
 
 # attach Flip column and reorder Flip right after StrikeLabel
@@ -384,12 +384,12 @@ display["Latch Time"] = display["StrikeLabel"].map(
     lambda s: st.session_state.latched_strikes.get(s, {}).get("time", "")
 )
 
-# ----------------- Send CE–PE flip emails (one per detected flip) -----------------
+# ----------------- Send CEâ€“PE flip emails (one per detected flip) -----------------
 if flip_alerts:
     for strike_num, prev_sign, curr_sign, prev_risk, curr_risk in flip_alerts:
         direction = "Bullish" if curr_sign == "Positive" else "Bearish"
         ist_now = now_ist()
-        subject = f"CE–PE Risk Flip: {strike_num} → {direction} | {fmt_ist(ist_now)}"
+        subject = f"CEâ€“PE Risk Flip: {strike_num} â†’ {direction} | {fmt_ist(ist_now)}"
         # prepare a concise plain-text body (plus include the row info)
         try:
             row_info = display.loc[display["StrikeLabel"].astype(str).str.contains(str(strike_num))].iloc[0].to_dict()
@@ -417,7 +417,7 @@ if flip_alerts:
 
 # -----------------
 # NEW: OI_Diff sign-change detection + email alerts (per-strike)
-# mirror CE–PE latch behavior but maintain separate state keys
+# mirror CEâ€“PE latch behavior but maintain separate state keys
 # Improved: Show previous numeric and current numeric, use IST and better text.
 # -----------------
 oi_flip_alerts = []
@@ -453,7 +453,7 @@ for _, row in display.iterrows():
             # prepare email
             ist_now = now_ist()
             prev_val = st.session_state.oi_last_sign.get(str(strike_label) + "_val", 0)
-            subject = f"OI Diff Flip: {strike_num} → {direction} | {fmt_ist(ist_now)}"
+            subject = f"OI Diff Flip: {strike_num} â†’ {direction} | {fmt_ist(ist_now)}"
             body_lines = [
                 f"Index: {symbol}",
                 f"Expiry: {selected_expiry}",
@@ -517,7 +517,7 @@ for _, row in display.iterrows():
             allow_send = False
         if allow_send:
             ist_now = now_ist()
-            subject = f"CE Risk Flip: {strike_num} → {'Bullish' if ce_sign=='Positive' else 'Bearish'} | {fmt_ist(ist_now)}"
+            subject = f"CE Risk Flip: {strike_num} â†’ {'Bullish' if ce_sign=='Positive' else 'Bearish'} | {fmt_ist(ist_now)}"
             body = (
                 f"Index: {symbol}\n"
                 f"Expiry: {selected_expiry}\n"
@@ -552,7 +552,7 @@ for _, row in display.iterrows():
             allow_send = False
         if allow_send:
             ist_now = now_ist()
-            subject = f"PE Risk Flip: {strike_num} → {'Bullish (PE)' if pe_sign=='Positive' else 'Bearish (CE)'} | {fmt_ist(ist_now)}"
+            subject = f"PE Risk Flip: {strike_num} â†’ {'Bullish (PE)' if pe_sign=='Positive' else 'Bearish (CE)'} | {fmt_ist(ist_now)}"
             body = (
                 f"Index: {symbol}\n"
                 f"Expiry: {selected_expiry}\n"
@@ -608,7 +608,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         atm_trend_display = atm_trend
 
         # ---- Rocket emoji logic ----
-        rocket_symbol = "🚀" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
+        rocket_symbol = "ðŸš€" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
 
         # ---- Trend color mapping (email-safe) ----
         def colorize_trend_html(text):
@@ -635,12 +635,12 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         <div style="font-family: Arial; font-size: 14px;">
         <b>Summary:</b><br>
         {fmt_ist(now)} | 
-        <b>🟣 Max Call OI Strike:</b> <font color='#6a0dad'><b>{max_call_strike}</b></font> | 
+        <b>ðŸŸ£ Max Call OI Strike:</b> <font color='#6a0dad'><b>{max_call_strike}</b></font> | 
         <b>Spot:</b> {safe_int(spot_price)} | 
-        <b>PCR (all shown):</b> {total_pcr:.2f} → {trend_html} | 
-        <b>PCR (ATM ±4):</b> {atm_pcr:.2f} → {atm_trend_html} | {rocket_symbol}<br>
-        <b>OI_Diff:</b> <font color='{oi_color}'><b>{latest_oi_diff}</b></font> — {oi_direction}<br>
-        <b>🟢 Max Put OI Strike:</b> <font color='#009933'><b>{max_put_strike}</b></font><br>
+        <b>PCR (all shown):</b> {total_pcr:.2f} â†’ {trend_html} | 
+        <b>PCR (ATM Â±4):</b> {atm_pcr:.2f} â†’ {atm_trend_html} | {rocket_symbol}<br>
+        <b>OI_Diff:</b> <font color='{oi_color}'><b>{latest_oi_diff}</b></font> â€” {oi_direction}<br>
+        <b>ðŸŸ¢ Max Put OI Strike:</b> <font color='#009933'><b>{max_put_strike}</b></font><br>
         -----------------------------------------------------------<br>
         </div>
         """
@@ -680,14 +680,14 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
             f"Max Call OI Strike: {max_call_strike} | "
             f"Spot: {safe_int(spot_price)} | "
             f"PCR (all shown): {total_pcr:.2f} -> {trend_display} | "
-            f"PCR (ATM ±4): {atm_pcr:.2f} -> {atm_trend_display} | {rocket_symbol}\n"
+            f"PCR (ATM Â±4): {atm_pcr:.2f} -> {atm_trend_display} | {rocket_symbol}\n"
             f"OI_Diff: {latest_oi_diff} -> {oi_direction}\n"
             f"Max Put OI Strike: {max_put_strike}\n"
             f"{display.to_string(index=False)}"
         )
 
         # ---- Send the email ----
-        subject = f"CE–PE Summary Update ({fmt_ist(now)})"
+        subject = f"CEâ€“PE Summary Update ({fmt_ist(now)})"
         ok, err = send_email_html(subject, full_html, plain_text=plain, to_addr=ALERT_EMAIL)
 
         if ok:
@@ -738,71 +738,23 @@ try:
                     if p != c:
                         changed_fields.append((names[i], p, c))
                 changed_details.append((s_label, changed_fields))
-# ---- Compute Max PUT and CALL OI strikes ----
-        max_put_strike = (
-            display.loc[display["PE_OI"].idxmax(), "StrikeLabel"]
-            if "PE_OI" in display.columns and not display["PE_OI"].empty
-            else "N/A"
-        )
-        max_call_strike = (
-            display.loc[display["CE_OI"].idxmax(), "StrikeLabel"]
-            if "CE_OI" in display.columns and not display["CE_OI"].empty
-            else "N/A"
-        )
-
-        # ---- Include OI_Diff Summary ----
-        latest_oi_diff = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
-        oi_direction = "Bullish (PE > CE)" if latest_oi_diff > 0 else ("Bearish (CE > PE)" if latest_oi_diff < 0 else "Neutral")
-        oi_color = "#009933" if latest_oi_diff > 0 else ("#cc0000" if latest_oi_diff < 0 else "#666666")
-
-        # ---- Display strings ----
-        trend_display = trend
-        atm_trend_display = atm_trend
-
-        # ---- Rocket emoji logic ----
-        rocket_symbol = "🚀" if ("Strong" in trend_display or "Strong" in atm_trend_display) else ""
-
-        # ---- Trend color mapping (email-safe) ----
-        def colorize_trend_html(text):
-            color = "#999999"
-            if "Bullish" in text:
-                if "Risky" in text:
-                    color = "#ffcc00"  # Yellow
-                elif "Strong" in text:
-                    color = "#00cc44"  # Bright green
-                else:
-                    color = "#33cc33"  # Normal green
-            elif "Bearish" in text:
-                if "Strong" in text:
-                    color = "#ff3333"  # Bright red
-                else:
-                    color = "#cc0000"  # Red
-            return f"<font color='{color}'><b>{text}</b></font>"
-
-        trend_html = colorize_trend_html(trend_display)
-        atm_trend_html = colorize_trend_html(atm_trend_display)
-       
-       
-
-
 
     # Update snapshot now (so we don't repeatedly detect same change) after possibly sending email
     if changed:
         # Build summary email similar to periodic
         try:
             now_send = now_ist()
- # ---- Build header HTML ----
-    	header_html = f"""
-        <div style="font-family: Arial; font-size: 14px;">
-        <b>Summary:</b><br>
-        {fmt_ist(now)} | 
-        <b>🟣 Max Call OI Strike:</b> <font color='#6a0dad'><b>{max_call_strike}</b></font> | 
-        <b>Spot:</b> {safe_int(spot_price)} | 
-        <b>PCR (all shown):</b> {total_pcr:.2f} → {trend_html} | 
-        <b>PCR (ATM ±4):</b> {atm_pcr:.2f} → {atm_trend_html} | {rocket_symbol}<br>
-        <b>OI_Diff:</b> <font color='{oi_color}'><b>{latest_oi_diff}</b></font> — {oi_direction}<br>
-        <b>🟢 Max Put OI Strike:</b> <font color='#009933'><b>{max_put_strike}</b></font><br>
-        -----------------------------------------------------------<br>
+            latest_oi_diff = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
+            oi_direction = "Bullish (PE > CE)" if latest_oi_diff > 0 else ("Bearish (CE > PE)" if latest_oi_diff < 0 else "Neutral")
+            oi_color = "#009933" if latest_oi_diff > 0 else ("#cc0000" if latest_oi_diff < 0 else "#666666")
+            trend_html = (f"<b>{trend}</b>")
+            atm_trend_html = (f"<b>{atm_trend}</b>")
+
+            header_html = f"""
+            <div style="font-family: Arial; font-size: 14px;">
+            <b>Snapshot Update (change detected):</b><br>
+            {fmt_ist(now_send)} | Spot: {safe_int(spot_price)} | OI_Diff: <font color='{oi_color}'><b>{latest_oi_diff}</b></font> â€” {oi_direction}<br>
+            -----------------------------------------------------------<br>
             </div>
             """
 
@@ -852,32 +804,32 @@ except Exception as e:
 # ----------------- Rocket logic (unchanged) -----------------
 atm_ce_pct = int(atm_row.get("CE_%OI", 0))
 atm_pe_pct = int(atm_row.get("PE_%OI", 0))
-rocket_symbol = "⚪"
+rocket_symbol = "âšª"
 rocket_text = "Neutral"
 if (total_pcr > 1) and (atm_pe_oi > atm_ce_oi) and (atm_pe_pct > 0):
-    rocket_symbol = "🟢🚀"; rocket_text = "Strong Bullish"
+    rocket_symbol = "ðŸŸ¢ðŸš€"; rocket_text = "Strong Bullish"
 elif (total_pcr < 1) and (atm_ce_oi > atm_pe_oi) and (atm_ce_pct > 0):
-    rocket_symbol = "🔴🚀"; rocket_text = "Strong Bearish"
+    rocket_symbol = "ðŸ”´ðŸš€"; rocket_text = "Strong Bearish"
 else:
     if (total_pcr > 1 and atm_pe_oi > atm_ce_oi) or (atm_pe_pct > 0 and atm_pe_oi > atm_ce_oi):
-        rocket_symbol = "🟡⚠️"; rocket_text = "Bullish but Risky"
+        rocket_symbol = "ðŸŸ¡âš ï¸"; rocket_text = "Bullish but Risky"
     elif (total_pcr < 1 and atm_ce_oi > atm_pe_oi) or (atm_ce_pct > 0 and atm_ce_oi > atm_pe_oi):
-        rocket_symbol = "🟡⚠️"; rocket_text = "Bearish but Risky"
+        rocket_symbol = "ðŸŸ¡âš ï¸"; rocket_text = "Bearish but Risky"
     else:
-        rocket_symbol = "🤔"; rocket_text = "Conflict / Wait"
+        rocket_symbol = "ðŸ¤”"; rocket_text = "Conflict / Wait"
 
 # ----------------- Display -----------------
 st.markdown("---")
-pcr_display = (f"{total_pcr:.2f}" if total_pcr != float("inf") else "∞")
-atm_pcr_display = (f"{atm_pcr:.2f}" if atm_pcr != float("inf") else "∞")
+pcr_display = (f"{total_pcr:.2f}" if total_pcr != float("inf") else "âˆž")
+atm_pcr_display = (f"{atm_pcr:.2f}" if atm_pcr != float("inf") else "âˆž")
 st.markdown(
     f"**Live Snapshot:** {fmt_ist(now)} | "
     f"Spot: {safe_int(spot_price)} | "
-    f"PCR (all shown): {pcr_display} → {trend} | "
-    f"PCR (ATM ±4): {atm_pcr_display} → {atm_trend} | {rocket_symbol} {rocket_text}"
+    f"PCR (all shown): {pcr_display} â†’ {trend} | "
+    f"PCR (ATM Â±4): {atm_pcr_display} â†’ {atm_trend} | {rocket_symbol} {rocket_text}"
 )
 
-st.write("### 🔍 ATM ±5 Strike Option Chain (ascending strikes)")
+st.write("### ðŸ” ATM Â±5 Strike Option Chain (ascending strikes)")
 
 # ----------------- Visual highlight function (uses latched_strikes) -----------------
 def latch_color(row):
@@ -885,9 +837,9 @@ def latch_color(row):
     latched_info = st.session_state.latched_strikes.get(str(strike_label), None)
     if latched_info:
         if latched_info["state"] == "BULLISH":
-            return ["background-color: #C6F6D5"] * len(row)  # 🟢 light green
+            return ["background-color: #C6F6D5"] * len(row)  # ðŸŸ¢ light green
         elif latched_info["state"] == "BEARISH":
-            return ["background-color: #FEB2B2"] * len(row)  # 🔴 light red
+            return ["background-color: #FEB2B2"] * len(row)  # ðŸ”´ light red
     return [""] * len(row)
 
 # color function for OI_Diff (green if positive else red)
@@ -913,13 +865,13 @@ except Exception:
 
 # show recent OI_Diff flips log (UI)
 if st.session_state.oi_flip_log:
-    st.markdown("### 🔔 Recent OI_Diff Flips")
+    st.markdown("### ðŸ”” Recent OI_Diff Flips")
     for entry in reversed(st.session_state.oi_flip_log[-8:]):
-        st.markdown(f"- **{entry['time']}** — {entry['strike']}: {entry['prev_sign']} → {entry['curr_sign']} "
-                    f"({entry['prev_val']} → {entry['curr_val']})")
+        st.markdown(f"- **{entry['time']}** â€” {entry['strike']}: {entry['prev_sign']} â†’ {entry['curr_sign']} "
+                    f"({entry['prev_val']} â†’ {entry['curr_val']})")
 
 # Optional: Add manual reset button for latched strikes
-st.markdown("### 🔄 Latch Control")
+st.markdown("### ðŸ”„ Latch Control")
 if st.button("Reset All Latched Strikes"):
     st.session_state.latched_strikes.clear()
     st.session_state.last_sign_state.clear()
@@ -928,4 +880,3 @@ if st.button("Reset All Latched Strikes"):
     st.session_state.pe_last_sign.clear()
     st.success("All latched strikes reset successfully.")
     st.experimental_rerun()
-
