@@ -738,7 +738,6 @@ try:
                     if p != c:
                         changed_fields.append((names[i], p, c))
                 changed_details.append((s_label, changed_fields))
-
 # ---- Compute Max PUT and CALL OI strikes ----
         max_put_strike = (
             display.loc[display["PE_OI"].idxmax(), "StrikeLabel"]
@@ -782,7 +781,6 @@ try:
 
         trend_html = colorize_trend_html(trend_display)
         atm_trend_html = colorize_trend_html(atm_trend_display)
-
        
        
 
@@ -793,13 +791,8 @@ try:
         # Build summary email similar to periodic
         try:
             now_send = now_ist()
-            latest_oi_diff = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
-            oi_direction = "Bullish (PE > CE)" if latest_oi_diff > 0 else ("Bearish (CE > PE)" if latest_oi_diff < 0 else "Neutral")
-            oi_color = "#009933" if latest_oi_diff > 0 else ("#cc0000" if latest_oi_diff < 0 else "#666666")
-            trend_html = (f"<b>{trend}</b>")
-            atm_trend_html = (f"<b>{atm_trend}</b>")
  # ---- Build header HTML ----
-             header_html = f"""
+    	header_html = f"""
         <div style="font-family: Arial; font-size: 14px;">
         <b>Summary:</b><br>
         {fmt_ist(now)} | 
