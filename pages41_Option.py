@@ -190,7 +190,7 @@ atm_idx_filtered = (df_filtered["strikePrice"] - spot_price).abs().idxmin()
 atm_strike = int(df_filtered.loc[atm_idx_filtered, "strikePrice"])
 
 # Derived
-df_filtered["CE_PE_Diff"] = df_filtered["CE_Risk"] - df_filtered["PE_Risk"]
+df_filtered["CE_PE_Diff"] = df_filtered["PE_OI"] - df_filtered["CE_OI"]
 
 # PCRs
 total_pe_oi = int(df_filtered["PE_OI"].sum())
@@ -441,7 +441,7 @@ for _, row in display.iterrows():
 
     if prev_sign and prev_sign != "Zero" and curr_sign != "Zero" and prev_sign != curr_sign:
         # direction text
-        direction = "Bullish (PE dominant)" if curr_sign == "Positive" else "Bearish (CE dominant)"
+        direction = "Bullish" if curr_sign == "Positive" else "Bearish"
         # cooldown check
         last_sent = st.session_state.oi_last_oi_latch_time.get(str(strike_label))
         allow_send = True
@@ -493,96 +493,8 @@ for _, row in display.iterrows():
     st.session_state.oi_last_sign[str(strike_label)] = curr_sign
     st.session_state.oi_last_sign[str(strike_label) + "_val"] = int(curr_oi_float)
 
-# -----------------
-# NEW: CE risk and PE risk flip detection + email alerts
-#   - mirrors OI_Diff flip behavior but for CE_Risk and PE_Risk
-# -----------------
-ce_pe_risk_alerts = []
-for _, row in display.iterrows():
-    strike_label = row["StrikeLabel"]
-    try:
-        strike_num = int(str(strike_label).replace("[ATM]", "").strip())
-    except Exception:
-        strike_num = None
-
-    # CE risk flip detection
-    ce_curr = int(row.get("CE_Risk", 0))
-    ce_sign = sign_of(ce_curr)
-    ce_prev = st.session_state.ce_last_sign.get(str(strike_label))
-    if ce_prev and ce_prev != "Zero" and ce_sign != "Zero" and ce_prev != ce_sign:
-        last_sent = st.session_state.ce_last_latch_time.get(str(strike_label))
-        allow_send = True
-        COOLDOWN = timedelta(seconds=60)
-        if last_sent and (now - last_sent) < COOLDOWN:
-            allow_send = False
-        if allow_send:
-            ist_now = now_ist()
-            subject = f"CE Risk Flip: {strike_num} → {'Bullish' if ce_sign=='Positive' else 'Bearish'} | {fmt_ist(ist_now)}"
-            body = (
-                f"Index: {symbol}\n"
-                f"Expiry: {selected_expiry}\n"
-                f"Strike: {strike_num}\n"
-                f"CE_Risk Flip: {ce_prev} -> {ce_sign}\n"
-                f"Prev CE_Risk (approx): {st.session_state.ce_last_sign.get(str(strike_label) + '_val', 0)}\n"
-                f"Curr CE_Risk: {ce_curr}\n"
-                f"Timestamp: {fmt_ist(ist_now)}\n\n"
-            )
-            try:
-                row_info = display.loc[display["StrikeLabel"].astype(str).str.contains(str(strike_num))].iloc[0].to_dict()
-            except Exception:
-                row_info = {}
-            for k, v in row_info.items():
-                body += f"{k}: {v}\n"
-            ok, err = send_email_simple(subject, body, to_addr=ALERT_EMAIL)
-            if ok:
-                st.success(f"CE Risk email sent: {subject}")
-                st.session_state.ce_last_latch_time[str(strike_label)] = now
-            else:
-                st.error(f"Failed sending CE Risk email ({strike_num}): {err}")
-
-    # PE risk flip detection
-    pe_curr = int(row.get("PE_Risk", 0))
-    pe_sign = sign_of(pe_curr)
-    pe_prev = st.session_state.pe_last_sign.get(str(strike_label))
-    if pe_prev and pe_prev != "Zero" and pe_sign != "Zero" and pe_prev != pe_sign:
-        last_sent = st.session_state.pe_last_latch_time.get(str(strike_label))
-        allow_send = True
-        COOLDOWN = timedelta(seconds=60)
-        if last_sent and (now - last_sent) < COOLDOWN:
-            allow_send = False
-        if allow_send:
-            ist_now = now_ist()
-            subject = f"PE Risk Flip: {strike_num} → {'Bullish (PE)' if pe_sign=='Positive' else 'Bearish (CE)'} | {fmt_ist(ist_now)}"
-            body = (
-                f"Index: {symbol}\n"
-                f"Expiry: {selected_expiry}\n"
-                f"Strike: {strike_num}\n"
-                f"PE_Risk Flip: {pe_prev} -> {pe_sign}\n"
-                f"Prev PE_Risk (approx): {st.session_state.pe_last_sign.get(str(strike_label) + '_val', 0)}\n"
-                f"Curr PE_Risk: {pe_curr}\n"
-                f"Timestamp: {fmt_ist(ist_now)}\n\n"
-            )
-            try:
-                row_info = display.loc[display["StrikeLabel"].astype(str).str.contains(str(strike_num))].iloc[0].to_dict()
-            except Exception:
-                row_info = {}
-            for k, v in row_info.items():
-                body += f"{k}: {v}\n"
-            ok, err = send_email_simple(subject, body, to_addr=ALERT_EMAIL)
-            if ok:
-                st.success(f"PE Risk email sent: {subject}")
-                st.session_state.pe_last_latch_time[str(strike_label)] = now
-            else:
-                st.error(f"Failed sending PE Risk email ({strike_num}): {err}")
-
-    # update stored CE/PE sign & numeric
-    st.session_state.ce_last_sign[str(strike_label)] = ce_sign
-    st.session_state.ce_last_sign[str(strike_label) + "_val"] = int(ce_curr)
-    st.session_state.pe_last_sign[str(strike_label)] = pe_sign
-    st.session_state.pe_last_sign[str(strike_label) + "_val"] = int(pe_curr)
-
 # ----------------- Periodic summary every 60 seconds (unchanged cadence) -----------------
-SUMMARY_INTERVAL = timedelta(seconds=60)
+SUMMARY_INTERVAL = timedelta(seconds=600)
 
 if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
     try:
@@ -687,7 +599,7 @@ if (now - st.session_state.last_summary_sent) >= SUMMARY_INTERVAL:
         )
 
         # ---- Send the email ----
-        subject = f"CE–PE Summary Update ({fmt_ist(now)})"
+        subject = f"10m Summary({fmt_ist(now)})"
         ok, err = send_email_html(subject, full_html, plain_text=plain, to_addr=ALERT_EMAIL)
 
         if ok:
@@ -745,7 +657,7 @@ try:
         try:
             now_send = now_ist()
             latest_oi_diff = int(display["OI_Diff"].sum()) if "OI_Diff" in display.columns else 0
-            oi_direction = "Bullish (PE > CE)" if latest_oi_diff > 0 else ("Bearish (CE > PE)" if latest_oi_diff < 0 else "Neutral")
+            oi_direction = "Bullish (OI PE > OI CE)" if latest_oi_diff > 0 else ("Bearish (OI CE > OI PE)" if latest_oi_diff < 0 else "Neutral")
             oi_color = "#009933" if latest_oi_diff > 0 else ("#cc0000" if latest_oi_diff < 0 else "#666666")
             trend_html = (f"<b>{trend}</b>")
             atm_trend_html = (f"<b>{atm_trend}</b>")
@@ -784,16 +696,16 @@ try:
 
             plain = f"Snapshot update {fmt_ist(now_send)}\n{display.to_string(index=False)}"
 
-            subject = f"Immediate Snapshot Update ({fmt_ist(now_send)})"
+            subject = f"Immediate Update ({fmt_ist(now_send)})"
             ok, err = send_email_html(subject, full_html, plain_text=plain, to_addr=ALERT_EMAIL)
             if ok:
-                st.success("Immediate snapshot summary email sent (change detected).")
+                st.success("Immediate summary email sent (change detected).")
                 st.session_state.last_summary_sent = now
             else:
-                st.error(f"Failed to send immediate snapshot summary email: {err}")
+                st.error(f"Failed to send immediate summary email: {err}")
 
         except Exception as ee:
-            st.error(f"Error when preparing immediate snapshot email: {ee}")
+            st.error(f"Error when preparing immediate email: {ee}")
 
     # store current snapshot into session_state (regardless of changed or not)
     st.session_state.last_snapshot = current_snapshot
